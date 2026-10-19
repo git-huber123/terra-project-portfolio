@@ -50,10 +50,27 @@
       ];
       // Now, it's time to actually generate the cards. (I hope these comments will help in the future...)
       for (const i = 0; i++; i < finishedProjects.length) {
+        // Create the variables (do these comments make me look like a bot? hope not)
         const project = finishedProjects[i];
         const name = project.name;
         const desc = project.description;
         const subtitle = project.subtitle;
+
+        // Now, we have to get the actual elements created.
+        const tileEl = document.createElement("div");
+        const nameEl = document.createElement("h4");
+        const subEl = document.createElement("h5");
+        const descEl = document.createElement("p");
+
+        nameEl.textContent = name;
+        subEl.textContent = subtitle;
+        descEl.textContent = desc;
+
+        tileEl.appendChild(nameEl);
+        tileEl.appendChild(subEl);
+        tileEl.appendChil(descEl);
+
+        finishedSec.appendChild(tileEl);
       }
     </script>
   </body>
