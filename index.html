@@ -3,6 +3,58 @@
   <head>
     <title>Project Portfolio</title>
   </head>
-  <link rel="stylesheet" href="style.css"></style>
-  <body></body>
+  <link rel="stylesheet" href="style.css" />
+  <body>
+    <div>
+      <h1>My Portfolio</h1>
+    </div>
+    <div id="finished"></div>
+    <div id="current"></div>
+    <script>
+      function getEl(el) {
+        return document.getElementById(el);
+      }
+      const finishedSec = getEl("finished");
+      const currentSec = getEl("current");
+      // We got the sections, now we have to systematically insert the elements into them. First, let's create the array
+      const finishedProjects = [
+        {
+          name: "Lightsaber",
+          description:
+            "A club that I'm in designed a lightsaber, and each member made their own version of it, by following along with the mentor. However, I found the solid-color blade boring, and so reprogrammed the Arduino, with the help of ChatGPT, to have a bunch of cool-looking rainbow color modes.",
+          subtitle: "Custom-coded to be rainbow!",
+        },
+        {
+          name: "Blender",
+          description: "I followed a whole bunch of tutorials and made a lot of cool renders - however, I never made anything original. :(",
+          subtitle: "I found it on YT shorts...",
+        },
+        {
+          name: "3D Printing",
+          description: "I used Blender - probably not the wisest idea. However, I made a bunch of cool things, and inspired my friend to do it as well.",
+          subtitle: "I used a community 3d printer cause I'm broke :(",
+        },
+        {
+          name: "Coding",
+          description:
+            "I coded a whole bunch of stuff - I made an RPG in python, made a screen time tracker with help from Claude, a website back in '25, and another website back in '26. (2025 and 2026)",
+          subtitle: "My first website got taken down cause I didnt pay the bills",
+        },
+      ];
+      const currentProjects = [
+        {
+          name: "Terra",
+          description: "I got an email and now I'm doing it, getting that laptop would be cool.",
+          subtitle: "I cannot put in enough hours for that processor bruh",
+        },
+      ];
+      // Now, it's time to actually generate the cards. (I hope these comments will help in the future...)
+      for (const i = 0; i++; i < finishedProjects.length) {
+        const project = finishedProjects[i];
+        const name = project.name;
+        const desc = project.description;
+        const subtitle = project.subtitle;
+      }
+    </script>
+  </body>
 </html>
