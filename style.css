@@ -1,0 +1,64 @@
+#finished {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 50px;
+  row-gap: 50px;
+}
+
+#current {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 50px;
+  row-gap: 50px;
+}
+
+body {
+  padding: 2vw;
+}
+
+body > * {
+  margin: 20px;
+  font-family:
+    "Inter",
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
+
+.finishedTile,
+.currentTile {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 16px;
+  border-radius: 10px;
+  flex-direction: column;
+}
+
+.finishedTile {
+  background-color: rgb(22, 142, 240);
+}
+
+.finishedDesc,
+.finishedSub,
+.finishedName {
+  color: white;
+}
+
+.currentTile {
+  background-color: rgb(204, 78, 230);
+}
+
+.currentDesc,
+.currentSub,
+.currentName {
+  color: white;
+}
+
+h1 {
+  font-size: 5rem;
+}
+
+.secTitle {
+  font-size: 3.5rem;
+}

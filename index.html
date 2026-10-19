@@ -8,7 +8,9 @@
     <div>
       <h1>My Portfolio</h1>
     </div>
+    <h2 class="secTitle">Finished Projects</h2>
     <div id="finished"></div>
+    <h2 class="secTitle">Current Projects</h2>
     <div id="current"></div>
     <script>
       function getEl(el) {
@@ -49,7 +51,7 @@
         },
       ];
       // Now, it's time to actually generate the cards. (I hope these comments will help in the future...)
-      for (let i = 0; i++; i < finishedProjects.length) {
+      for (let i = 0; i < finishedProjects.length; i++) {
         // Create the variables (do these comments make me look like a bot? hope not)
         const project = finishedProjects[i];
         const name = project.name;
@@ -58,8 +60,8 @@
 
         // Now, we have to get the actual elements created.
         const tileEl = document.createElement("div");
-        const nameEl = document.createElement("h4");
-        const subEl = document.createElement("h5");
+        const nameEl = document.createElement("h2");
+        const subEl = document.createElement("h3");
         const descEl = document.createElement("p");
 
         nameEl.textContent = name;
@@ -68,9 +70,43 @@
 
         tileEl.appendChild(nameEl);
         tileEl.appendChild(subEl);
-        tileEl.appendChil(descEl);
+        tileEl.appendChild(descEl);
+
+        tileEl.className = "finishedTile";
+        nameEl.className = "finishedName";
+        subEl.className = "finishedSub";
+        descEl.className = "finishedDesc";
 
         finishedSec.appendChild(tileEl);
+      }
+
+      for (let i = 0; i < currentProjects.length; i++) {
+        // Create the variables (do these comments make me look like a bot? hope not)
+        const project = currentProjects[i];
+        const name = project.name;
+        const desc = project.description;
+        const subtitle = project.subtitle;
+
+        // Now, we have to get the actual elements created.
+        const tileEl = document.createElement("div");
+        const nameEl = document.createElement("h2");
+        const subEl = document.createElement("h3");
+        const descEl = document.createElement("p");
+
+        nameEl.textContent = name;
+        subEl.textContent = subtitle;
+        descEl.textContent = desc;
+
+        tileEl.appendChild(nameEl);
+        tileEl.appendChild(subEl);
+        tileEl.appendChild(descEl);
+
+        tileEl.className = "currentTile";
+        nameEl.className = "currentTile";
+        subEl.className = "currentTile";
+        descEl.className = "currentTile";
+
+        currentSec.appendChild(tileEl);
       }
     </script>
   </body>
