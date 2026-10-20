@@ -13,10 +13,29 @@
     <h2 class="secTitle">--- Current Projects ---</h2>
     <div id="current"></div>
     <div id="fullscreen"></div>
+    <h2 class="secTitle">--- Terra Coin Calculator ---</h2>
+    <div id="coincalc">
+      <div id="calcEditorBar">
+        <div class="fakeButton" onclick="addWeek()">Add Week</div>
+        <div class="fakeButton noHover" id="weeksCounter">0/12 Weeks</div>
+        <div class="fakeButton noHover" id="totalCoins">0 Coins</div>
+        <input class="fakeButton noHover" id="currentCoins" placeholder="Current # of coins?" oninput="updateTotalCoins()" />
+      </div>
+    </div>
+    <!-- MAIN -->
+    <!-- This script handles the helper functions that are used in multiple scripts, such as getEl()-->
     <script>
       function getEl(el) {
         return document.getElementById(el);
       }
+      function createEl(el) {
+        return document.createElement(el);
+      }
+    </script>
+
+    <!-- PROJECTS -->
+    <!-- This script handles the finished projects and current projects sections-->
+    <script>
       const finishedSec = getEl("finished");
       const currentSec = getEl("current");
       // We got the sections, now we have to systematically insert the elements into them. First, let's create the array
@@ -60,10 +79,10 @@
         const subtitle = project.subtitle;
 
         // Now, we have to get the actual elements created.
-        const tileEl = document.createElement("div");
-        const nameEl = document.createElement("h2");
-        const subEl = document.createElement("h3");
-        const descEl = document.createElement("p");
+        const tileEl = createEl("div");
+        const nameEl = createEl("h2");
+        const subEl = createEl("h3");
+        const descEl = createEl("p");
 
         nameEl.textContent = name;
         subEl.textContent = subtitle;
@@ -93,10 +112,10 @@
         const subtitle = project.subtitle;
 
         // Now, we have to get the actual elements created.
-        const tileEl = document.createElement("div");
-        const nameEl = document.createElement("h2");
-        const subEl = document.createElement("h3");
-        const descEl = document.createElement("p");
+        const tileEl = createEl("div");
+        const nameEl = createEl("h2");
+        const subEl = createEl("h3");
+        const descEl = createEl("p");
 
         nameEl.textContent = name;
         subEl.textContent = subtitle;
@@ -124,10 +143,10 @@
         const subtitle = project.subtitle;
 
         // Now, we have to get the actual elements created.
-        const tileEl = document.createElement("div");
-        const nameEl = document.createElement("h2");
-        const subEl = document.createElement("h3");
-        const descEl = document.createElement("p");
+        const tileEl = createEl("div");
+        const nameEl = createEl("h2");
+        const subEl = createEl("h3");
+        const descEl = createEl("p");
 
         nameEl.textContent = name;
         subEl.textContent = subtitle;
@@ -151,17 +170,86 @@
           descEl.className = "currentDesc";
         }
 
-        const exit = document.createElement("div");
+        const exit = createEl("div");
         exit.onclick = () => {
           getEl("fullscreen").innerHTML = "";
         };
         exit.id = "fullscreen-exit";
         exit.textContent = "Exit Fullscreen";
+        exit.className = "fakeButton";
 
         tileEl.appendChild(exit);
 
         getEl("fullscreen").innerHTML = "";
         getEl("fullscreen").appendChild(tileEl);
+      }
+    </script>
+
+    <!-- TERRA COIN CALC -->
+    <!-- This script handles the terra time to coin calculator-->
+    <script>
+      let totalWeeks = 0;
+      function addWeek() {
+        if (totalWeeks >= 12) {
+          getEl("weeksCounter").style.backgroundColor = "red";
+          //getEl("weeksCounter").style.fontWeight = "bold";
+          getEl("weeksCounter").style.scale = "1.1";
+          setTimeout(() => {
+            getEl("weeksCounter").style.backgroundColor = "lightskyblue";
+            //getEl("weeksCounter").style.fontWeight = "normal";
+            getEl("weeksCounter").style.scale = "1";
+          }, 250);
+          return;
+        }
+        let days = [];
+        totalWeeks += 1;
+        const weekBar = createEl("div");
+        weekBar.className = "weekBar";
+        weekBar.id = totalWeeks;
+        const weekId = createEl("h2");
+        weekId.textContent = "Week " + totalWeeks;
+        weekBar.appendChild(weekId);
+        for (const name of "Mon;Tue;Wed;Thu;Fri;Sat;Sun".split(";")) {
+          days.push({ name, el: createEl("div"), hours: 0 });
+        }
+        for (const day of days) {
+          const name = createEl("h2");
+          name.textContent = day.name;
+
+          const time = createEl("input");
+          time.placeholder = 0;
+          time.oninput = updateTotalCoins();
+
+          day.el.appendChild(name);
+          day.el.appendChild(time);
+
+          weekBar.appendChild(day.el);
+        }
+        const deleteBtn = document.createElement("div");
+        deleteBtn.classList.add("fakeButton");
+        deleteBtn.textContent = "Remove Week";
+        deleteBtn.dataset.weekID = totalWeeks;
+        deleteBtn.onclick = () => {
+          deleteWeek(deleteBtn.dataset.weekID);
+        };
+        weekBar.appendChild(deleteBtn);
+        getEl("coincalc").appendChild(weekBar);
+
+        getEl("weeksCounter").textContent = totalWeeks + "/12 Weeks";
+      }
+      function updateTotalCoins() {}
+      function deleteWeek(weekID) {
+        const p = getEl("coincalc");
+        const weekToDelete = p.children[weekID];
+        weekToDelete.remove();
+        for (let i = 1; i < p.children.length; i++) {
+          const w = p.children[i];
+          w.children[0].textContent = "Week " + i;
+          w.children[8].dataset.weekID = i;
+        }
+        updateTotalCoins();
+        totalWeeks -= 1;
+        getEl("weeksCounter").textContent = totalWeeks + "/12 Weeks";
       }
     </script>
   </body>
