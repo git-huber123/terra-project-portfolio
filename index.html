@@ -8,10 +8,11 @@
     <div>
       <h1>My Portfolio</h1>
     </div>
-    <h2 class="secTitle">Finished Projects</h2>
+    <h2 class="secTitle">--- Finished Projects ---</h2>
     <div id="finished"></div>
-    <h2 class="secTitle">Current Projects</h2>
+    <h2 class="secTitle">--- Current Projects ---</h2>
     <div id="current"></div>
+    <div id="fullscreen"></div>
     <script>
       function getEl(el) {
         return document.getElementById(el);
@@ -77,6 +78,10 @@
         subEl.className = "finishedSub";
         descEl.className = "finishedDesc";
 
+        tileEl.onclick = () => {
+          fullscreen(project);
+        };
+
         finishedSec.appendChild(tileEl);
       }
 
@@ -102,11 +107,61 @@
         tileEl.appendChild(descEl);
 
         tileEl.className = "currentTile";
-        nameEl.className = "currentTile";
-        subEl.className = "currentTile";
-        descEl.className = "currentTile";
+        nameEl.className = "currentName";
+        subEl.className = "currentSub";
+        descEl.className = "currentDesc";
+
+        tileEl.onclick = () => {
+          fullscreen(project);
+        };
 
         currentSec.appendChild(tileEl);
+      }
+
+      function fullscreen(project) {
+        const name = project.name;
+        const desc = project.description;
+        const subtitle = project.subtitle;
+
+        // Now, we have to get the actual elements created.
+        const tileEl = document.createElement("div");
+        const nameEl = document.createElement("h2");
+        const subEl = document.createElement("h3");
+        const descEl = document.createElement("p");
+
+        nameEl.textContent = name;
+        subEl.textContent = subtitle;
+        descEl.textContent = desc;
+
+        tileEl.appendChild(nameEl);
+        tileEl.appendChild(subEl);
+        tileEl.appendChild(descEl);
+
+        tileEl.id = "fullscreen-element";
+
+        if (finishedProjects.includes(project)) {
+          tileEl.className = "finishedTile";
+          nameEl.className = "finishedName";
+          subEl.className = "finishedSub";
+          descEl.className = "finishedDesc";
+        } else {
+          tileEl.className = "currentTile";
+          nameEl.className = "currentName";
+          subEl.className = "currentSub";
+          descEl.className = "currentDesc";
+        }
+
+        const exit = document.createElement("div");
+        exit.onclick = () => {
+          getEl("fullscreen").innerHTML = "";
+        };
+        exit.id = "fullscreen-exit";
+        exit.textContent = "Exit Fullscreen";
+
+        tileEl.appendChild(exit);
+
+        getEl("fullscreen").innerHTML = "";
+        getEl("fullscreen").appendChild(tileEl);
       }
     </script>
   </body>
