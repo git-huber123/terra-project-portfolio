@@ -11,12 +11,26 @@
         Hey! This is a collection of a bunch of things I've done - I have some descriptions, and also some examples for the web things I've made.
       </p>
     </div>
-    <h2 class="secTitle">Finished Projects</h2>
+    <div id="header">
+      <h2 class="secTitle">Finished Projects</h2>
+      <p style="text-align: center">All of this stuff is the things that I've done before, but that can't easily be put onto this page.</p>
+    </div>
     <div id="finished"></div>
-    <h2 class="secTitle">Current Projects</h2>
+    <div id="header">
+      <h2 class="secTitle">Current Projects</h2>
+      <p style="text-align: center">This section houses the projects that I'm currently working on.</p>
+    </div>
     <div id="current"></div>
     <div id="fullscreen"></div>
-    <h2 class="secTitle">Terra Coin Calculator</h2>
+    <div id="header">
+      <h2 class="secTitle">Terra Coin Calculator</h2>
+      <p style="text-align: center">
+        I'll confess that this isn't a previous thing, and that I made this earlier this week. However, I made it so I can calculate the amount of coins I'd get for
+        putting in this many hours easily instead of having to do (3+2+2+2+3+4+4-10)*12*25+120 in Desmos calculator. It's like the other Terra calculator, except instead
+        of taking "I want this many coins" and giving "Work this many hours per week", it takes "I will work this many hours per week" and gives "You will get this many
+        coins".
+      </p>
+    </div>
     <div id="coincalc">
       <div id="calcEditorBar">
         <div class="fakeButton" onclick="addWeek()">Add Week</div>
@@ -25,8 +39,19 @@
         <input class="fakeButton noHover" id="currentCoins" placeholder="Current # of coins?" oninput="updateTotalCoins()" />
       </div>
     </div>
-    <h2 class="secTitle">Satisfying Rainbow Grid</h2>
+    <div id="header">
+      <h2 class="secTitle">Rainbow Grid</h2>
+      <p style="text-align: center">
+        I had made this thing for my Mom at some point when I was younger in Scratch, or something similar to it - I don't think I was good enough to make this when I was
+        a kid, and I don't even remember what my account was. Anyways, this is probably better.
+      </p>
+    </div>
     <div id="rsgrid"></div>
+    <div id="header">
+      <h2 class="secTitle">Click the Circle</h2>
+      <p style="text-align: center">This was originally a Python game, but I don't know how to put Python code on webpages, so I had to remake it.</p>
+    </div>
+    <div id="circleclick"></div>
 
     <!-- MAIN -->
     <!-- This script handles the helper functions that are used in multiple scripts, such as getEl() -->
@@ -161,7 +186,7 @@
       // We got the sections, now we have to systematically insert the elements into them. First, let's create the array
       const finishedProjects = [
         {
-          name: "Lightsaber",
+          name: "Custom Lightsaber",
           description:
             "A club that I'm in designed a lightsaber, and each member made their own version of it, by following along with the mentor. However, I found the solid-color blade boring, and so reprogrammed the Arduino, with the help of ChatGPT, to have a bunch of cool-looking rainbow color modes.",
           subtitle: "Custom-coded to be rainbow!",
@@ -177,7 +202,7 @@
           subtitle: "I used a community 3d printer cause I'm broke :(",
         },
         {
-          name: "Coding",
+          name: "1st Ever Website",
           description:
             "I coded a whole bunch of stuff - I made an RPG in python, made a screen time tracker with help from Claude, a website back in '25, and another website back in '26. (2025 and 2026)",
           subtitle: "My first website got taken down cause I didnt pay the bills",
@@ -452,5 +477,9 @@
         // Just a side note: I'm really proud of this algorithm - sure, it's small, but back in the day something like this would have been a challenge for me to write, but now it's just *snap* and done. (that might be a stretch but still)
       }
     </script>
+
+    <!-- CIRCLE CLICKER -->
+    <!-- This section handles the circle clicker game. -->
+    <script></script>
   </body>
 </html>
