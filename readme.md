@@ -6,4 +6,4 @@ It's basically a webpage so you can see all of the cool things that I've done be
 
 For usage instructions, just look around, scroll, and click on the projects to expand them and see the full view
 
-Features: You can
+I also added a Terra calculator, allowing you to see how many coins you'll get if you work for X hours / day, you can change it per-day.
