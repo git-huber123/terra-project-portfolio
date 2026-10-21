@@ -5,15 +5,18 @@
   </head>
   <link rel="stylesheet" href="style.css" />
   <body>
-    <div>
+    <div id="header">
       <h1>My Portfolio</h1>
+      <p style="text-align: center">
+        Hey! This is a collection of a bunch of things I've done - I have some descriptions, and also some examples for the web things I've made.
+      </p>
     </div>
-    <h2 class="secTitle">--- Finished Projects ---</h2>
+    <h2 class="secTitle">Finished Projects</h2>
     <div id="finished"></div>
-    <h2 class="secTitle">--- Current Projects ---</h2>
+    <h2 class="secTitle">Current Projects</h2>
     <div id="current"></div>
     <div id="fullscreen"></div>
-    <h2 class="secTitle">--- Terra Coin Calculator ---</h2>
+    <h2 class="secTitle">Terra Coin Calculator</h2>
     <div id="coincalc">
       <div id="calcEditorBar">
         <div class="fakeButton" onclick="addWeek()">Add Week</div>
@@ -22,6 +25,9 @@
         <input class="fakeButton noHover" id="currentCoins" placeholder="Current # of coins?" oninput="updateTotalCoins()" />
       </div>
     </div>
+    <h2 class="secTitle">Satisfying Rainbow Grid</h2>
+    <div id="rsgrid"></div>
+
     <!-- MAIN -->
     <!-- This script handles the helper functions that are used in multiple scripts, such as getEl() -->
     <script>
@@ -87,13 +93,13 @@
       function cycleBackgroundColor(oldCol) {
               // Basically, we start with a rgb code, turn it into rgb, and then we just cycle it 1 over on the hue, and keep the saturation and the lightness the same, and return that formatted in the rgb version
               const rgbVals = getRgbValues(oldCol);
-              console.log("given rgb values - " + JSON.stringify(rgbVals));
+              //console.log("given rgb values - " + JSON.stringify(rgbVals));
               const hslOldVals = rgbToHsl(rgbVals.r, rgbVals.g, rgbVals.b);
-              console.log("old HSL values - " + JSON.stringify(hslOldVals));
+              //console.log("old HSL values - " + JSON.stringify(hslOldVals));
               const newRgbVals = hslToRgb((hslOldVals.h + 1) % 361, hslOldVals.s, hslOldVals.l);
-              console.log("newRGB values - " + JSON.stringify(newRgbVals));
+              //console.log("newRGB values - " + JSON.stringify(newRgbVals));
               return `rgb(${newRgbVals.r}, ${newRgbVals.g}, ${newRgbVals.b})`;
-              console.log("returned values - " + `rgb(${newRgbVals.r}, ${newRgbVals.g}, ${newRgbVals.b})`);
+              //console.log("returned values - " + `rgb(${newRgbVals.r}, ${newRgbVals.g}, ${newRgbVals.b})`);
             }*/
       //I got rid of this function because I realized that I could just keep everything in HSL, simplifying things a LOT. Then I'll just need 2 helper functions, rgbToHsl and getRgbValues, which is why the other 2 are in this archived code block
 
@@ -142,7 +148,7 @@
 
       function cycleBackgroundColor(oldHsl) {
         const nH = rgbToHsl(getRgbValues(oldHsl).r, getRgbValues(oldHsl).g, getRgbValues(oldHsl).b);
-        console.log(nH, oldHsl);
+        //console.log(nH, oldHsl);
         return `hsl(${(nH.h + 1) % 361}, ${nH.s}%, ${nH.l}%)`;
       }
     </script>
@@ -428,6 +434,22 @@
         updateWeekIDs();
         getEl("weeksCounter").textContent = totalWeeks + "/12 Weeks";
         updateTotalCoins();
+      }
+    </script>
+
+    <!-- SATISFYING GRID -->
+    <!-- This script handles the satisfying region with the hover effects -->
+    <script>
+      // First things first: procedurally generate the grid. This part isn't too hard, since we just need to append 361 divs (that's 19 squared)
+      for (let i = 0; i < 19 * 19; i++) {
+        const div = document.createElement("div");
+        div.className = "rsdiv";
+        getEl("rsgrid").appendChild(div);
+        const x = i % 19; // This is which column it's in
+        const y = Math.floor(i / 19);
+        const hsl = `hsl(${(x + y) * 19}, 75%, 55%)`;
+        div.style.backgroundColor = hsl;
+        // Just a side note: I'm really proud of this algorithm - sure, it's small, but back in the day something like this would have been a challenge for me to write, but now it's just *snap* and done. (that might be a stretch but still)
       }
     </script>
   </body>

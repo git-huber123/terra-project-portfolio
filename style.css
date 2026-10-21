@@ -189,3 +189,33 @@ h1 {
 .hover-scale {
   transition: 0.5s;
 }
+
+#header {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+}
+
+#rsgrid {
+  display: grid;
+  grid-template-columns: repeat(19, 2.1vw);
+  grid-template-rows: repeat(19, 2.1vh);
+  gap: 0.1vw;
+  margin: 0 auto;
+  width: 41.8vw;
+}
+
+.rsdiv {
+  transition: 2s;
+  width: 2vw;
+  height: 2vh;
+  border-radius: 50px;
+  border: 1px solid black;
+}
+
+.rsdiv:hover {
+  scale: 1.5;
+  transition-duration: 0.1s;
+  border: 3px solid black;
+}
