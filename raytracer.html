@@ -5,8 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Ray Tracer</title>
   </head>
-  <body style="display: flex; justify-content: center; align-items: center">
+  <body style="display: flex; justify-content: center; align-items: center; flex-direction: column">
     <canvas id="canvas"></canvas>
+    <p id="stats"></p>
+    <button onclick="document.body.innerHTML = ''">Clear all</button>
     <script>
       function drawRect(x, y, width, height, fillColor = "black", strokeColor = null, lineWidth = 1) {
         if (fillColor !== null) {
@@ -21,6 +23,15 @@
         }
       }
 
+      const floorSize = 50;
+      const floorColors = [];
+      for (let i = 0; i < floorSize * 2; i++) {
+        floorColors.push([]);
+        for (let j = 0; j < floorSize * 2; j++) {
+          floorColors[i].push({ h: Math.random() * 360, s: 60, l: 50 });
+        }
+      }
+
       const canvas = document.getElementById("canvas");
       const ctx = canvas.getContext("2d");
 
@@ -29,15 +40,15 @@
 
       const xDegs = 100;
       const yDegs = 50;
-      const xScale = 0.5;
-      const yScale = 0.5;
+      const xScale = 0.25;
+      const yScale = 0.25;
 
       const rayStep = 0.05;
 
       const width = canvas.width / (xDegs / xScale);
       const height = canvas.height / (yDegs / yScale);
 
-      const viewDistance = 8;
+      const viewDistance = 20;
 
       const player = { x: 0, y: 0, z: 1.5, xCenterAngle: 0, yCenterAngle: 0 };
 
@@ -47,11 +58,6 @@
           { x: 6, y: 6, z: 3 },
           { h: 0, s: 100, l: 50 },
         ],
-        [
-          { x: -50, y: -50, z: -0.1 },
-          { x: 50, y: 50, z: 0 },
-          { h: 0, s: 100, l: 25 },
-        ],
       ];
 
       for (let floorX = -50; floorX < 50; floorX++) {
@@ -59,6 +65,8 @@
           rects.push;
         }
       }
+
+      const maxBoxZ = Math.max(...rects.flatMap((r) => [r[0].z, r[1].z]));
 
       function handleInput() {
         const h = (player.xCenterAngle * Math.PI) / 180;
@@ -100,19 +108,63 @@
         }
       }
 
+      const buf = document.createElement("canvas");
+      buf.width = xDegs / xScale;
+      buf.height = yDegs / yScale;
+      const bufCtx = buf.getContext("2d");
+      const img = bufCtx.createImageData(buf.width, buf.height);
+
+      function hslToRgb(h, s, l) {
+        s /= 100;
+        l /= 100;
+        const k = (n) => (n + h / 30) % 12;
+        const a = s * Math.min(l, 1 - l);
+        const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+        return [f(0) * 255, f(8) * 255, f(4) * 255];
+      }
+
+      function setPixel(i, j, h, s, l) {
+        const [r, g, b] = hslToRgb(h, s, l);
+        const p = (j * buf.width + i) * 4;
+        img.data[p] = r;
+        img.data[p + 1] = g;
+        img.data[p + 2] = b;
+        img.data[p + 3] = 255;
+      }
+
       function loop() {
+        const t0 = performance.now();
         handleInput();
-        drawRect(0, 0, canvas.width, canvas.height, "black");
-        for (let xMove = xDegs / -2; xMove < xDegs / 2; xMove += xScale) {
-          for (let yMove = yDegs / -2; yMove < yDegs / 2; yMove += yScale) {
-            const hRad = ((player.xCenterAngle - xMove) * Math.PI) / 180;
-            const vRad = ((player.yCenterAngle + yMove) * Math.PI) / 180;
 
-            const x = player.x + Math.cos(hRad) * Math.cos(vRad) * viewDistance;
-            const y = player.y + Math.sin(hRad) * Math.cos(vRad) * viewDistance;
-            const z = player.z - Math.sin(vRad) * viewDistance;
+        const th = (player.xCenterAngle * Math.PI) / 180;
+        const ph = (player.yCenterAngle * Math.PI) / 180;
 
-            for (let distance = 0; distance < viewDistance; distance += rayStep) {
+        const fwd = { x: Math.cos(th) * Math.cos(ph), y: Math.sin(th) * Math.cos(ph), z: -Math.sin(ph) };
+        const right = { x: Math.sin(th), y: -Math.cos(th), z: 0 };
+        const up = { x: Math.cos(th) * Math.sin(ph), y: Math.sin(th) * Math.sin(ph), z: Math.cos(ph) };
+
+        const xCells = xDegs / xScale;
+        const yCells = yDegs / yScale;
+        const aMax = Math.tan((xDegs / 2) * (Math.PI / 180));
+        const bMax = (aMax * canvas.height) / canvas.width;
+
+        img.data.fill(0);
+
+        for (let i = 0; i < xCells; i++) {
+          for (let j = 0; j < yCells; j++) {
+            const a = (((i + 0.5) / xCells) * 2 - 1) * aMax; // -aMax (left) to +aMax (right)
+            const b = (1 - ((j + 0.5) / yCells) * 2) * bMax; // +bMax (top) to -bMax (bottom)
+
+            let dx = fwd.x + right.x * a + up.x * b;
+            let dy = fwd.y + right.y * a + up.y * b;
+            let dz = fwd.z + right.z * a + up.z * b;
+            const len = Math.hypot(dx, dy, dz);
+
+            const x = player.x + (dx / len) * viewDistance;
+            const y = player.y + (dy / len) * viewDistance;
+            const z = player.z + (dz / len) * viewDistance;
+
+            for (let distance = 0; distance < viewDistance; distance += Math.max(rayStep, distance * 0.02)) {
               const dX = x - player.x;
               const dY = y - player.y;
               const dZ = z - player.z;
@@ -134,17 +186,32 @@
                 ) {
                   const fade = (viewDistance - distance) / viewDistance; // 1 up close, 0 far away
                   const light = rect[2].l * (0.25 + 0.75 * fade);
-                  const color = `hsl(${rect[2].h}, ${rect[2].s}%, ${light}%)`;
-                  drawRect(((xMove + xDegs / 2) / xScale) * width, ((yMove + yDegs / 2) / yScale) * height, width, height, color);
+                  setPixel(i, j, rect[2].h, rect[2].s, light);
                   hitRect = true;
                   break;
                 }
               }
 
               if (hitRect) break;
+              if (tracedZ <= 0) {
+                const tile = floorColors[Math.floor(tracedX) + floorSize]?.[Math.floor(tracedY) + floorSize];
+                if (tile) {
+                  const fade = (viewDistance - distance) / viewDistance;
+                  setPixel(i, j, tile.h, tile.s, tile.l * (0.25 + 0.75 * fade));
+                }
+                break; // the ray is underground either way, so stop marching
+              }
+              if (dZ > 0 && tracedZ > maxBoxZ) break;
             }
           }
         }
+        if (document.getElementById("stats").textContent !== JSON.stringify(player)) document.getElementById("stats").textContent = JSON.stringify(player);
+        console.log((performance.now() - t0).toFixed(1) + " ms");
+        bufCtx.putImageData(img, 0, 0);
+        ctx.fillStyle = "black";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.imageSmoothingEnabled = false; // keep the blocky look instead of blurring
+        ctx.drawImage(buf, 0, 0, canvas.width, canvas.height);
         setTimeout(() => {
           requestAnimationFrame(loop);
         }, 0);
