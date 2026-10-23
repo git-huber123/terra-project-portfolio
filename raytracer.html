@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ray Tracer</title>
+  </head>
+  <body style="display: flex; justify-content: center; align-items: center">
+    <canvas id="canvas"></canvas>
+    <script>
+      function drawRect(x, y, width, height, fillColor = "black", strokeColor = null, lineWidth = 1) {
+        if (fillColor !== null) {
+          ctx.fillStyle = fillColor;
+          ctx.fillRect(x, y, width, height);
+        }
+
+        if (strokeColor !== null) {
+          ctx.strokeStyle = strokeColor;
+          ctx.lineWidth = lineWidth;
+          ctx.strokeRect(x, y, width, height);
+        }
+      }
+
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d");
+
+      canvas.width = 2500;
+      canvas.height = 1250;
+
+      const xDegs = 100;
+      const yDegs = 50;
+      const xScale = 0.5;
+      const yScale = 0.5;
+
+      const rayStep = 0.05;
+
+      const width = canvas.width / (xDegs / xScale);
+      const height = canvas.height / (yDegs / yScale);
+
+      const viewDistance = 8;
+
+      const player = { x: 0, y: 0, z: 1.5, xCenterAngle: 0, yCenterAngle: 0 };
+
+      const rects = [
+        [
+          { x: 3, y: 3, z: 0 },
+          { x: 6, y: 6, z: 3 },
+          { h: 0, s: 100, l: 50 },
+        ],
+        [
+          { x: -50, y: -50, z: -0.1 },
+          { x: 50, y: 50, z: 0 },
+          { h: 0, s: 100, l: 25 },
+        ],
+      ];
+
+      for (let floorX = -50; floorX < 50; floorX++) {
+        for (let floorY = -50; floorY < 50; floorY++) {
+          rects.push;
+        }
+      }
+
+      function handleInput() {
+        const h = (player.xCenterAngle * Math.PI) / 180;
+        const fx = Math.cos(h); // forward vector
+        const fy = Math.sin(h);
+        const pitchLimit = 90 - yDegs / 2;
+
+        if (keysDown.has("KeyW")) {
+          player.x += fx * move;
+          player.y += fy * move;
+        }
+        if (keysDown.has("KeyS")) {
+          player.x -= fx * move;
+          player.y -= fy * move;
+        }
+        if (keysDown.has("KeyD")) {
+          player.x += fy * move;
+          player.y -= fx * move;
+        } // right = (fy, -fx)
+        if (keysDown.has("KeyA")) {
+          player.x -= fy * move;
+          player.y += fx * move;
+        }
+
+        if (keysDown.has("Space")) player.z += move;
+        if (keysDown.has("ShiftLeft") || keysDown.has("ShiftRight")) player.z -= move;
+
+        if (keysDown.has("ArrowUp")) {
+          player.yCenterAngle = Math.max(-pitchLimit, player.yCenterAngle - moveAngle);
+        }
+        if (keysDown.has("ArrowDown")) {
+          player.yCenterAngle = Math.min(pitchLimit, player.yCenterAngle + moveAngle);
+        }
+        if (keysDown.has("ArrowLeft")) {
+          player.xCenterAngle = (player.xCenterAngle + moveAngle) % 360;
+        }
+        if (keysDown.has("ArrowRight")) {
+          player.xCenterAngle = (player.xCenterAngle - moveAngle + 360) % 360;
+        }
+      }
+
+      function loop() {
+        handleInput();
+        drawRect(0, 0, canvas.width, canvas.height, "black");
+        for (let xMove = xDegs / -2; xMove < xDegs / 2; xMove += xScale) {
+          for (let yMove = yDegs / -2; yMove < yDegs / 2; yMove += yScale) {
+            const hRad = ((player.xCenterAngle - xMove) * Math.PI) / 180;
+            const vRad = ((player.yCenterAngle + yMove) * Math.PI) / 180;
+
+            const x = player.x + Math.cos(hRad) * Math.cos(vRad) * viewDistance;
+            const y = player.y + Math.sin(hRad) * Math.cos(vRad) * viewDistance;
+            const z = player.z - Math.sin(vRad) * viewDistance;
+
+            for (let distance = 0; distance < viewDistance; distance += rayStep) {
+              const dX = x - player.x;
+              const dY = y - player.y;
+              const dZ = z - player.z;
+
+              const tracedX = player.x + (dX * distance) / viewDistance;
+              const tracedY = player.y + (dY * distance) / viewDistance;
+              const tracedZ = player.z + (dZ * distance) / viewDistance;
+
+              let hitRect = false;
+
+              for (const rect of rects) {
+                if (
+                  tracedX <= Math.max(rect[0].x, rect[1].x) &&
+                  tracedX >= Math.min(rect[0].x, rect[1].x) &&
+                  tracedY <= Math.max(rect[0].y, rect[1].y) &&
+                  tracedY >= Math.min(rect[0].y, rect[1].y) &&
+                  tracedZ <= Math.max(rect[0].z, rect[1].z) &&
+                  tracedZ >= Math.min(rect[0].z, rect[1].z)
+                ) {
+                  const fade = (viewDistance - distance) / viewDistance; // 1 up close, 0 far away
+                  const light = rect[2].l * (0.25 + 0.75 * fade);
+                  const color = `hsl(${rect[2].h}, ${rect[2].s}%, ${light}%)`;
+                  drawRect(((xMove + xDegs / 2) / xScale) * width, ((yMove + yDegs / 2) / yScale) * height, width, height, color);
+                  hitRect = true;
+                  break;
+                }
+              }
+
+              if (hitRect) break;
+            }
+          }
+        }
+        setTimeout(() => {
+          requestAnimationFrame(loop);
+        }, 0);
+      }
+
+      const keysDown = new Set();
+      const trackedKeys = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ShiftLeft", "ShiftRight", "Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
+
+      const move = 0.05;
+
+      const moveAngle = 1;
+
+      window.addEventListener("keydown", (event) => {
+        if (!trackedKeys.has(event.code)) return;
+
+        event.preventDefault(); // Stops arrows/space from scrolling the page
+        keysDown.add(event.code);
+      });
+
+      window.addEventListener("keyup", (event) => {
+        keysDown.delete(event.code);
+      });
+
+      requestAnimationFrame(loop);
+    </script>
+  </body>
+</html>

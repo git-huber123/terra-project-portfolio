@@ -219,3 +219,11 @@ h1 {
   transition-duration: 0.1s;
   border: 3px solid black;
 }
+
+#cccanvas {
+  display: block;
+  width: 100%;
+  max-width: 600px;
+  height: auto;
+  margin: 0 auto;
+}
