@@ -23,6 +23,28 @@
         }
       }
 
+      function updateBody() {
+        const base = player.z - 1.5; // feet height, so the body follows jumps and falls
+        const px = player.x;
+        const py = player.y;
+
+        const set = (rect, x0, y0, z0, x1, y1, z1) => {
+          rect[0].x = x0;
+          rect[0].y = y0;
+          rect[0].z = z0;
+          rect[1].x = x1;
+          rect[1].y = y1;
+          rect[1].z = z1;
+        };
+
+        // legs: 0.5 x 0.5, z 0 to 0.65, 0.25 gap between them
+        set(rects[bodyStart], px - 0.25, py - 0.625, base, px + 0.25, py - 0.125, base + 0.65);
+        set(rects[bodyStart + 1], px - 0.25, py + 0.125, base, px + 0.25, py + 0.625, base + 0.65);
+
+        // torso: 0.5 x 1.25, z 0.65 to 1.3
+        set(rects[bodyStart + 2], px - 0.25, py - 0.625, base + 0.65, px + 0.25, py + 0.625, base + 1.3);
+      }
+
       const floorSize = 50;
       const floorColors = [];
       for (let i = 0; i < floorSize * 2; i++) {
@@ -31,6 +53,33 @@
           floorColors[i].push({ h: Math.random() * 360, s: 60, l: 50 });
         }
       }
+
+      const rects = [
+        [
+          { x: 3, y: 3, z: 0 },
+          { x: 6, y: 6, z: 3 },
+          { h: 0, s: 100, l: 50 },
+        ],
+      ];
+
+      /*const bodyStart = rects.length; // index of the first body part
+      rects.push(
+        [
+          { x: 0, y: 0, z: 0 },
+          { x: 0, y: 0, z: 0 },
+          { h: 220, s: 70, l: 40 },
+        ], // left leg
+        [
+          { x: 0, y: 0, z: 0 },
+          { x: 0, y: 0, z: 0 },
+          { h: 220, s: 70, l: 40 },
+        ], // right leg
+        [
+          { x: 0, y: 0, z: 0 },
+          { x: 0, y: 0, z: 0 },
+          { h: 120, s: 60, l: 40 },
+        ], // torso
+      );*/
 
       const canvas = document.getElementById("canvas");
       const ctx = canvas.getContext("2d");
@@ -45,20 +94,17 @@
 
       const rayStep = 0.05;
 
+      const gravity = 0.05;
+      const jumpVelocity = 0.75;
+
       const width = canvas.width / (xDegs / xScale);
       const height = canvas.height / (yDegs / yScale);
 
       const viewDistance = 20;
 
-      const player = { x: 0, y: 0, z: 1.5, xCenterAngle: 0, yCenterAngle: 0 };
+      const player = { x: 0, y: 0, z: 1.5, xCenterAngle: 0, yCenterAngle: 0, velocity: 0 };
 
-      const rects = [
-        [
-          { x: 3, y: 3, z: 0 },
-          { x: 6, y: 6, z: 3 },
-          { h: 0, s: 100, l: 50 },
-        ],
-      ];
+      let touchingFloor = true;
 
       for (let floorX = -50; floorX < 50; floorX++) {
         for (let floorY = -50; floorY < 50; floorY++) {
@@ -91,8 +137,11 @@
           player.y += fx * move;
         }
 
-        if (keysDown.has("Space")) player.z += move;
-        if (keysDown.has("ShiftLeft") || keysDown.has("ShiftRight")) player.z -= move;
+        if (keysDown.has("Space") && player.z === 1.5) {
+          player.velocity += jumpVelocity;
+          player.z += 0.01;
+        }
+        //if (keysDown.has("ShiftLeft") || keysDown.has("ShiftRight")) player.z -= move;
 
         if (keysDown.has("ArrowUp")) {
           player.yCenterAngle = Math.max(-pitchLimit, player.yCenterAngle - moveAngle);
@@ -135,6 +184,7 @@
       function loop() {
         const t0 = performance.now();
         handleInput();
+        //updateBody();
 
         const th = (player.xCenterAngle * Math.PI) / 180;
         const ph = (player.yCenterAngle * Math.PI) / 180;
@@ -212,6 +262,16 @@
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.imageSmoothingEnabled = false; // keep the blocky look instead of blurring
         ctx.drawImage(buf, 0, 0, canvas.width, canvas.height);
+
+        if (player.z > 1.5 || !touchingFloor) {
+          player.velocity -= gravity;
+        } else {
+          player.velocity = 0;
+          player.z = 1.5;
+        }
+
+        player.z += player.velocity;
+
         setTimeout(() => {
           requestAnimationFrame(loop);
         }, 0);
@@ -220,7 +280,7 @@
       const keysDown = new Set();
       const trackedKeys = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ShiftLeft", "ShiftRight", "Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
 
-      const move = 0.05;
+      const move = 0.15;
 
       const moveAngle = 1;
 
@@ -233,6 +293,24 @@
 
       window.addEventListener("keyup", (event) => {
         keysDown.delete(event.code);
+      });
+
+      const mouseSensitivity = 0.08; // degrees per pixel of mouse movement
+
+      canvas.addEventListener("click", () => {
+        canvas.requestPointerLock();
+      });
+
+      window.addEventListener("mousemove", (event) => {
+        if (document.pointerLockElement !== canvas) return;
+
+        const pitchLimit = 90 - yDegs / 2; // keep this the same as in handleInput
+
+        // mouse right -> turn right (angle goes down, matching your ArrowRight)
+        player.xCenterAngle = (((player.xCenterAngle - event.movementX * mouseSensitivity) % 360) + 360) % 360;
+
+        // mouse down -> look down (positive pitch is down, matching your ArrowDown)
+        player.yCenterAngle = Math.max(-pitchLimit, Math.min(pitchLimit, player.yCenterAngle + event.movementY * mouseSensitivity));
       });
 
       requestAnimationFrame(loop);
