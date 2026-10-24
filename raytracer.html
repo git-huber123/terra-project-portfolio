@@ -10,6 +10,41 @@
     <p id="stats"></p>
     <button onclick="document.body.innerHTML = ''">Clear all</button>
     <script>
+      function findIntersection(rect, uX, uY, uZ) {
+        const xFace = player.x < rect[4] ? rect[4] : rect[3]; // since rect[3] is min x and rect[4] is max x
+        const yFace = player.y < rect[6] ? rect[6] : rect[5]; // repeat
+        const zFace = player.z < rect[8] ? rect[8] : rect[7];
+
+        const xT = (xFace - player.x) / uX;
+        const yT = (yFace - player.y) / uY;
+        const zT = (zFace - player.z) / uZ;
+
+        const maxX = rect[3];
+        const minX = rect[4];
+        const maxY = rect[5];
+        const minY = rect[6];
+        const maxZ = rect[7];
+        const minZ = rect[8];
+
+        const xPred = { y: player.y + uY * xT, z: player.z + uZ * xT };
+        const yPred = { x: player.x + uX * yT, z: player.z + uZ * yT };
+        const zPred = { y: player.y + uY * zT, x: player.x + uX * zT };
+
+        let t = Infinity;
+
+        if (xT > 0 && xPred.y >= minY && xPred.y <= maxY && xPred.z >= minZ && xPred.z <= maxZ && xT < t) {
+          t = xT;
+        }
+        if (yT > 0 && yPred.x >= minX && yPred.x <= maxX && yPred.z >= minZ && yPred.z <= maxZ && yT < t) {
+          t = yT;
+        }
+        if (zT > 0 && zPred.x >= minX && zPred.x <= maxX && zPred.y >= minY && zPred.y <= maxY && zT < t) {
+          t = zT;
+        }
+
+        return t;
+      }
+
       function drawRect(x, y, width, height, fillColor = "black", strokeColor = null, lineWidth = 1) {
         if (fillColor !== null) {
           ctx.fillStyle = fillColor;
@@ -45,6 +80,42 @@
         set(rects[bodyStart + 2], px - 0.25, py - 0.625, base + 0.65, px + 0.25, py + 0.625, base + 1.3);
       }
 
+      function updateVertical() {
+        touchingFloor = false;
+
+        player.velocity -= gravity;
+        player.z += player.velocity;
+
+        // 1. the z = 0 ground plane (not a rect)
+        if (player.z - feetOffset < 0) {
+          player.z = feetOffset;
+          player.velocity = 0;
+          touchingFloor = true;
+        }
+
+        // 2. boxes
+        if (checkCollisions()) {
+          if (player.velocity <= 0) {
+            // moving down: landed on something. Snap feet to the top of the box we're inside.
+            const feet = player.z - feetOffset;
+            let top = -Infinity;
+            for (let i = 0; i < rects.length; i++) {
+              // use bodyStart instead of rects.length once the body is back
+              const r = rects[i];
+              if (areTouching(playerBox(), r)) {
+                top = Math.max(top, Math.max(r[0].z, r[1].z));
+              }
+            }
+            player.z = top + feetOffset + 0.0001; // tiny gap so resting doesn't count as overlap
+            touchingFloor = true;
+          } else {
+            // moving up: hit a ceiling. Back out and start falling.
+            player.z -= player.velocity;
+          }
+          player.velocity = 0;
+        }
+      }
+
       const floorSize = 50;
       const floorColors = [];
       for (let i = 0; i < floorSize * 2; i++) {
@@ -59,27 +130,80 @@
           { x: 3, y: 3, z: 0 },
           { x: 6, y: 6, z: 3 },
           { h: 0, s: 100, l: 50 },
+        ], // original red box
+
+        // stepping pillars, heading out along +x (the way you face at the start)
+        [
+          { x: 8, y: -1, z: 0 },
+          { x: 10, y: 1, z: 1 },
+          { h: 30, s: 80, l: 50 },
+        ],
+        [
+          { x: 11.5, y: -1, z: 0 },
+          { x: 13.5, y: 1, z: 2 },
+          { h: 55, s: 80, l: 50 },
+        ],
+        [
+          { x: 15.5, y: 0, z: 0 },
+          { x: 17.5, y: 2, z: 3 },
+          { h: 100, s: 70, l: 45 },
+        ],
+        [
+          { x: 19.5, y: 2, z: 0 },
+          { x: 21.5, y: 4, z: 4 },
+          { h: 160, s: 70, l: 45 },
+        ],
+        [
+          { x: 23, y: 4, z: 0 },
+          { x: 25, y: 6, z: 5 },
+          { h: 200, s: 75, l: 50 },
+        ],
+
+        // goal platform
+        [
+          { x: 27, y: 6, z: 0 },
+          { x: 33, y: 12, z: 5 },
+          { h: 280, s: 70, l: 50 },
+        ],
+
+        // test ceiling
+        [
+          { x: -5, y: -5, z: 5 },
+          { x: -10, y: -10, z: 8 },
+          { h: 60, s: 75, l: 50 },
         ],
       ];
 
+      for (const rect of rects) {
+        rect[3] = Math.max(rect[0].x, rect[1].x);
+        rect[4] = Math.min(rect[0].x, rect[1].x);
+        rect[5] = Math.max(rect[0].y, rect[1].y);
+        rect[6] = Math.min(rect[0].y, rect[1].y);
+        rect[7] = Math.max(rect[0].z, rect[1].z);
+        rect[8] = Math.min(rect[0].z, rect[1].z);
+      }
+
+      let totalDelay = 0;
+      let delaysCounted = 0;
+
       /*const bodyStart = rects.length; // index of the first body part
-      rects.push(
-        [
-          { x: 0, y: 0, z: 0 },
-          { x: 0, y: 0, z: 0 },
-          { h: 220, s: 70, l: 40 },
-        ], // left leg
-        [
-          { x: 0, y: 0, z: 0 },
-          { x: 0, y: 0, z: 0 },
-          { h: 220, s: 70, l: 40 },
-        ], // right leg
-        [
-          { x: 0, y: 0, z: 0 },
-          { x: 0, y: 0, z: 0 },
-          { h: 120, s: 60, l: 40 },
-        ], // torso
-      );*/
+            rects.push(
+              [
+                { x: 0, y: 0, z: 0 },
+                { x: 0, y: 0, z: 0 },
+                { h: 220, s: 70, l: 40 },
+              ], // left leg
+              [
+                { x: 0, y: 0, z: 0 },
+                { x: 0, y: 0, z: 0 },
+                { h: 220, s: 70, l: 40 },
+              ], // right leg
+              [
+                { x: 0, y: 0, z: 0 },
+                { x: 0, y: 0, z: 0 },
+                { h: 120, s: 60, l: 40 },
+              ], // torso
+            );*/
 
       const canvas = document.getElementById("canvas");
       const ctx = canvas.getContext("2d");
@@ -106,13 +230,37 @@
 
       let touchingFloor = true;
 
-      for (let floorX = -50; floorX < 50; floorX++) {
-        for (let floorY = -50; floorY < 50; floorY++) {
-          rects.push;
-        }
-      }
+      const feetOffset = 1.5; // eye to feet
 
       const maxBoxZ = Math.max(...rects.flatMap((r) => [r[0].z, r[1].z]));
+
+      function areTouching(a, b) {
+        const overlap = (a0, a1, b0, b1) => Math.min(a0, a1) < Math.max(b0, b1) && Math.max(a0, a1) > Math.min(b0, b1);
+
+        return overlap(a[0].x, a[1].x, b[0].x, b[1].x) && overlap(a[0].y, a[1].y, b[0].y, b[1].y) && overlap(a[0].z, a[1].z, b[0].z, b[1].z);
+      }
+
+      function checkCollisions() {
+        const half = 0.25; // player half-width in x and y
+        const me = playerBox();
+
+        // when you re-enable the body, replace rects.length with bodyStart
+        // so the player doesn't collide with their own body
+        const solidCount = rects.length;
+
+        for (let i = 0; i < solidCount; i++) {
+          if (areTouching(me, rects[i])) return true;
+        }
+        return false;
+      }
+
+      function playerBox() {
+        const half = 0.25;
+        return [
+          { x: player.x - half, y: player.y - half, z: player.z - feetOffset },
+          { x: player.x + half, y: player.y + half, z: player.z + 0.2 },
+        ];
+      }
 
       function handleInput() {
         const h = (player.xCenterAngle * Math.PI) / 180;
@@ -122,24 +270,31 @@
 
         if (keysDown.has("KeyW")) {
           player.x += fx * move;
+          if (checkCollisions()) player.x -= fx * move;
           player.y += fy * move;
+          if (checkCollisions()) player.y -= fy * move;
         }
         if (keysDown.has("KeyS")) {
           player.x -= fx * move;
+          if (checkCollisions()) player.x += fx * move;
           player.y -= fy * move;
+          if (checkCollisions()) player.y += fy * move;
         }
         if (keysDown.has("KeyD")) {
           player.x += fy * move;
+          if (checkCollisions()) player.x -= fy * move;
           player.y -= fx * move;
+          if (checkCollisions()) player.y += fx * move;
         } // right = (fy, -fx)
         if (keysDown.has("KeyA")) {
           player.x -= fy * move;
+          if (checkCollisions()) player.x += fy * move;
           player.y += fx * move;
+          if (checkCollisions()) player.y -= fx * move;
         }
 
-        if (keysDown.has("Space") && player.z === 1.5) {
+        if (keysDown.has("Space") && touchingFloor) {
           player.velocity += jumpVelocity;
-          player.z += 0.01;
         }
         //if (keysDown.has("ShiftLeft") || keysDown.has("ShiftRight")) player.z -= move;
 
@@ -184,6 +339,8 @@
       function loop() {
         const t0 = performance.now();
         handleInput();
+        updateVertical();
+
         //updateBody();
 
         const th = (player.xCenterAngle * Math.PI) / 180;
@@ -214,64 +371,62 @@
             const y = player.y + (dy / len) * viewDistance;
             const z = player.z + (dz / len) * viewDistance;
 
-            for (let distance = 0; distance < viewDistance; distance += Math.max(rayStep, distance * 0.02)) {
-              const dX = x - player.x;
-              const dY = y - player.y;
-              const dZ = z - player.z;
+            const uX = dx / len;
+            const uY = dy / len;
+            const uZ = dz / len;
 
-              const tracedX = player.x + (dX * distance) / viewDistance;
-              const tracedY = player.y + (dY * distance) / viewDistance;
-              const tracedZ = player.z + (dZ * distance) / viewDistance;
+            let t = Infinity;
+            let chosenRect = null;
 
-              let hitRect = false;
-
-              for (const rect of rects) {
-                if (
-                  tracedX <= Math.max(rect[0].x, rect[1].x) &&
-                  tracedX >= Math.min(rect[0].x, rect[1].x) &&
-                  tracedY <= Math.max(rect[0].y, rect[1].y) &&
-                  tracedY >= Math.min(rect[0].y, rect[1].y) &&
-                  tracedZ <= Math.max(rect[0].z, rect[1].z) &&
-                  tracedZ >= Math.min(rect[0].z, rect[1].z)
-                ) {
-                  const fade = (viewDistance - distance) / viewDistance; // 1 up close, 0 far away
-                  const light = rect[2].l * (0.25 + 0.75 * fade);
-                  setPixel(i, j, rect[2].h, rect[2].s, light);
-                  hitRect = true;
-                  break;
-                }
+            for (const rect of rects) {
+              let rT = findIntersection(rect, uX, uY, uZ);
+              if (rT < t) {
+                t = rT;
+                chosenRect = rect;
               }
-
-              if (hitRect) break;
-              if (tracedZ <= 0) {
-                const tile = floorColors[Math.floor(tracedX) + floorSize]?.[Math.floor(tracedY) + floorSize];
-                if (tile) {
-                  const fade = (viewDistance - distance) / viewDistance;
-                  setPixel(i, j, tile.h, tile.s, tile.l * (0.25 + 0.75 * fade));
-                }
-                break; // the ray is underground either way, so stop marching
-              }
-              if (dZ > 0 && tracedZ > maxBoxZ) break;
             }
+
+            let hitRect = false;
+
+            if (t !== Infinity && t < viewDistance) {
+              const intersection = { x: player.x + uX * t, y: player.y + uY * t, z: player.z + uZ * t };
+
+              const dist = Math.hypot(intersection.x - player.x, intersection.y - player.y, intersection.z - player.z);
+              const fade = (viewDistance - dist) / viewDistance;
+              setPixel(i, j, chosenRect[2].h, chosenRect[2].s, chosenRect[2].l * (0.25 + 0.75 * fade));
+
+              hitRect = true;
+            }
+
+            if (hitRect) continue;
+
+            if (uZ >= 0) continue; // ray points at or above the horizon, so it never reaches the floor
+
+            const ft = -player.z / uZ;
+            if (ft < viewDistance) {
+              const hitX = player.x + uX * ft;
+              const hitY = player.y + uY * ft;
+              const tile = floorColors[Math.floor(hitX) + floorSize]?.[Math.floor(hitY) + floorSize];
+              if (tile) {
+                const fade = (viewDistance - ft) / viewDistance;
+                setPixel(i, j, tile.h, tile.s, tile.l * (0.25 + 0.75 * fade));
+              }
+            }
+
+            if (uZ > 0 && tracedZ > maxBoxZ) break;
           }
         }
-        if (document.getElementById("stats").textContent !== JSON.stringify(player)) document.getElementById("stats").textContent = JSON.stringify(player);
-        console.log((performance.now() - t0).toFixed(1) + " ms");
+
+        totalDelay += performance.now() - t0;
+        delaysCounted += 1;
+        const stat = JSON.stringify(player) + " MS per Frame: " + Number(totalDelay / delaysCounted);
+
+        if (document.getElementById("stats").textContent !== stat) document.getElementById("stats").textContent = stat;
         bufCtx.putImageData(img, 0, 0);
         ctx.fillStyle = "black";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.imageSmoothingEnabled = false; // keep the blocky look instead of blurring
         ctx.drawImage(buf, 0, 0, canvas.width, canvas.height);
-
-        if (player.z > 1.5 || !touchingFloor) {
-          player.velocity -= gravity;
-        } else {
-          player.velocity = 0;
-          player.z = 1.5;
-        }
-
-        player.z += player.velocity;
-
         setTimeout(() => {
           requestAnimationFrame(loop);
         }, 0);
