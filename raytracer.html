@@ -26,20 +26,28 @@
         const maxZ = rect[7];
         const minZ = rect[8];
 
-        const xPred = { y: player.y + uY * xT, z: player.z + uZ * xT };
-        const yPred = { x: player.x + uX * yT, z: player.z + uZ * yT };
-        const zPred = { y: player.y + uY * zT, x: player.x + uX * zT };
-
         let t = Infinity;
 
-        if (xT > 0 && xPred.y >= minY && xPred.y <= maxY && xPred.z >= minZ && xPred.z <= maxZ && xT < t) {
-          t = xT;
+        if (xT > 0 && xT < t) {
+          const xPredy = player.y + uY * xT;
+          const xPredz = player.z + uZ * xT;
+          if (xPredy >= minY && xPredy <= maxY && xPredz >= minZ && xPredz <= maxZ) {
+            t = xT;
+          }
         }
-        if (yT > 0 && yPred.x >= minX && yPred.x <= maxX && yPred.z >= minZ && yPred.z <= maxZ && yT < t) {
-          t = yT;
+        if (yT > 0 && yT < t) {
+          const yPredx = player.x + uX * yT;
+          const yPredz = player.z + uZ * yT;
+          if (yPredx >= minX && yPredx <= maxX && yPredz >= minZ && yPredz <= maxZ) {
+            t = yT;
+          }
         }
-        if (zT > 0 && zPred.x >= minX && zPred.x <= maxX && zPred.y >= minY && zPred.y <= maxY && zT < t) {
-          t = zT;
+        if (zT > 0 && zT < t) {
+          const zPredy = player.y + uY * zT;
+          const zPredx = player.x + uX * zT;
+          if (zPredx >= minX && zPredx <= maxX && zPredy >= minY && zPredy <= maxY) {
+            t = zT;
+          }
         }
 
         return t;
@@ -56,6 +64,13 @@
           ctx.lineWidth = lineWidth;
           ctx.strokeRect(x, y, width, height);
         }
+      }
+
+      function tileHue(x, y) {
+        let n = (Math.imul(x, 374761393) + Math.imul(y, 668265263)) | 0;
+        n = Math.imul(n ^ (n >>> 13), 1274126177);
+        n ^= n >>> 16;
+        return (n >>> 0) % 360;
       }
 
       function updateBody() {
@@ -116,6 +131,35 @@
         }
       }
 
+      function makeBoxes(count, seed) {
+        let s = seed;
+        const rand = () => {
+          s |= 0;
+          s = (s + 0x6d2b79f5) | 0;
+          let t = Math.imul(s ^ (s >>> 15), 1 | s);
+          t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+        const between = (a, b) => Math.floor(a + rand() * (b - a + 1));
+
+        const boxes = [];
+        while (boxes.length < count) {
+          const x = between(-30, 30),
+            y = between(-30, 30),
+            z = between(0, 14);
+          const dx = between(1, 6),
+            dy = between(1, 6),
+            dz = between(1, 8);
+          if (Math.abs(x) < 3 && Math.abs(y) < 3) continue; // keep the spawn clear
+          boxes.push([
+            { x, y, z },
+            { x: x + dx, y: y + dy, z: z + dz },
+            { h: between(0, 360), s: between(50, 90), l: between(40, 70) },
+          ]);
+        }
+        return boxes;
+      }
+
       const floorSize = 50;
       const floorColors = [];
       for (let i = 0; i < floorSize * 2; i++) {
@@ -172,7 +216,10 @@
           { x: -10, y: -10, z: 8 },
           { h: 60, s: 75, l: 50 },
         ],
+        //
       ];
+
+      rects.push(...makeBoxes(100, 1));
 
       for (const rect of rects) {
         rect[3] = Math.max(rect[0].x, rect[1].x);
@@ -208,15 +255,22 @@
       const canvas = document.getElementById("canvas");
       const ctx = canvas.getContext("2d");
 
+      let avgMs = 0;
+
       canvas.width = 2500;
       canvas.height = 1250;
 
       const xDegs = 100;
       const yDegs = 50;
-      const xScale = 0.25;
-      const yScale = 0.25;
+      const xScale = 0.2;
+      const yScale = 0.2;
+      const xCells = xDegs / xScale;
+      const yCells = yDegs / yScale;
 
       const rayStep = 0.05;
+
+      const aMax = Math.tan((xDegs / 2) * (Math.PI / 180));
+      const bMax = (aMax * canvas.height) / canvas.width;
 
       const gravity = 0.05;
       const jumpVelocity = 0.75;
@@ -224,15 +278,16 @@
       const width = canvas.width / (xDegs / xScale);
       const height = canvas.height / (yDegs / yScale);
 
-      const viewDistance = 20;
+      const viewDistance = 40;
 
       const player = { x: 0, y: 0, z: 1.5, xCenterAngle: 0, yCenterAngle: 0, velocity: 0 };
 
       let touchingFloor = true;
 
-      const feetOffset = 1.5; // eye to feet
+      const feetOffset = 1.5;
 
       const maxBoxZ = Math.max(...rects.flatMap((r) => [r[0].z, r[1].z]));
+      const ts = new Float32Array(xCells * yCells);
 
       function areTouching(a, b) {
         const overlap = (a0, a1, b0, b1) => Math.min(a0, a1) < Math.max(b0, b1) && Math.max(a0, a1) > Math.min(b0, b1);
@@ -337,6 +392,16 @@
       }
 
       function loop() {
+        function cellDir(i, j) {
+          const a = (((i + 0.5) / xCells) * 2 - 1) * aMax;
+          const b = (1 - ((j + 0.5) / yCells) * 2) * bMax;
+          const dx = fwd.x + right.x * a + up.x * b;
+          const dy = fwd.y + right.y * a + up.y * b;
+          const dz = fwd.z + right.z * a + up.z * b;
+          const len = Math.hypot(dx, dy, dz);
+          return [dx / len, dy / len, dz / len];
+        }
+
         const t0 = performance.now();
         handleInput();
         updateVertical();
@@ -350,83 +415,117 @@
         const right = { x: Math.sin(th), y: -Math.cos(th), z: 0 };
         const up = { x: Math.cos(th) * Math.sin(ph), y: Math.sin(th) * Math.sin(ph), z: Math.cos(ph) };
 
-        const xCells = xDegs / xScale;
-        const yCells = yDegs / yScale;
-        const aMax = Math.tan((xDegs / 2) * (Math.PI / 180));
-        const bMax = (aMax * canvas.height) / canvas.width;
-
         img.data.fill(0);
+
+        ts.fill(Infinity);
 
         for (let i = 0; i < xCells; i++) {
           for (let j = 0; j < yCells; j++) {
-            const a = (((i + 0.5) / xCells) * 2 - 1) * aMax; // -aMax (left) to +aMax (right)
-            const b = (1 - ((j + 0.5) / yCells) * 2) * bMax; // +bMax (top) to -bMax (bottom)
-
-            let dx = fwd.x + right.x * a + up.x * b;
-            let dy = fwd.y + right.y * a + up.y * b;
-            let dz = fwd.z + right.z * a + up.z * b;
-            const len = Math.hypot(dx, dy, dz);
-
-            const x = player.x + (dx / len) * viewDistance;
-            const y = player.y + (dy / len) * viewDistance;
-            const z = player.z + (dz / len) * viewDistance;
-
-            const uX = dx / len;
-            const uY = dy / len;
-            const uZ = dz / len;
-
-            let t = Infinity;
-            let chosenRect = null;
-
-            for (const rect of rects) {
-              let rT = findIntersection(rect, uX, uY, uZ);
-              if (rT < t) {
-                t = rT;
-                chosenRect = rect;
-              }
-            }
-
-            let hitRect = false;
-
-            if (t !== Infinity && t < viewDistance) {
-              const intersection = { x: player.x + uX * t, y: player.y + uY * t, z: player.z + uZ * t };
-
-              const dist = Math.hypot(intersection.x - player.x, intersection.y - player.y, intersection.z - player.z);
-              const fade = (viewDistance - dist) / viewDistance;
-              setPixel(i, j, chosenRect[2].h, chosenRect[2].s, chosenRect[2].l * (0.25 + 0.75 * fade));
-
-              hitRect = true;
-            }
-
-            if (hitRect) continue;
-
-            if (uZ >= 0) continue; // ray points at or above the horizon, so it never reaches the floor
-
+            const [uX, uY, uZ] = cellDir(i, j);
+            if (uZ >= 0) continue;
             const ft = -player.z / uZ;
-            if (ft < viewDistance) {
-              const hitX = player.x + uX * ft;
-              const hitY = player.y + uY * ft;
-              const tile = floorColors[Math.floor(hitX) + floorSize]?.[Math.floor(hitY) + floorSize];
-              if (tile) {
-                const fade = (viewDistance - ft) / viewDistance;
-                setPixel(i, j, tile.h, tile.s, tile.l * (0.25 + 0.75 * fade));
-              }
-            }
-
-            if (uZ > 0 && tracedZ > maxBoxZ) break;
+            if (ft >= viewDistance) continue;
+            ts[j * xCells + i] = ft;
+            const fade = (viewDistance - ft) / viewDistance;
+            setPixel(i, j, tileHue(Math.floor(player.x + uX * ft), Math.floor(player.y + uY * ft)), 60, 50 * (0.25 + 0.75 * fade));
           }
         }
 
-        totalDelay += performance.now() - t0;
-        delaysCounted += 1;
-        const stat = JSON.stringify(player) + " MS per Frame: " + Number(totalDelay / delaysCounted);
+        for (let i = 0; i < xCells; i++) {
+          for (let j = 0; j < yCells; j++) {
+            const [uX, uY, uZ] = cellDir(i, j);
+            if (uZ >= 0) continue;
+            const ft = -player.z / uZ;
+            if (ft >= viewDistance) continue;
+            ts[j * xCells + i] = ft;
+            const fade = (viewDistance - ft) / viewDistance;
+            setPixel(i, j, tileHue(Math.floor(player.x + uX * ft), Math.floor(player.y + uY * ft)), 60, 50 * (0.25 + 0.75 * fade));
+          }
+        }
 
-        if (document.getElementById("stats").textContent !== stat) document.getElementById("stats").textContent = stat;
+        for (const rect of rects) {
+          // ---- find the vectors here ----
+          let minA = Infinity,
+            maxA = -Infinity,
+            minB = Infinity,
+            maxB = -Infinity;
+          let ahead = 0,
+            behind = 0;
+
+          for (let c = 0; c < 8; c++) {
+            // the 3 bits of c pick min or max on each axis, giving all 8 corners
+            const cx = c & 1 ? rect[3] : rect[4];
+            const cy = c & 2 ? rect[5] : rect[6];
+            const cz = c & 4 ? rect[7] : rect[8];
+
+            const vx = cx - player.x,
+              vy = cy - player.y,
+              vz = cz - player.z;
+            const depth = vx * fwd.x + vy * fwd.y + vz * fwd.z; // how far ahead
+
+            if (depth <= 0) {
+              behind++;
+              continue;
+            }
+            ahead++;
+
+            const a = (vx * right.x + vy * right.y + vz * right.z) / depth; // how far right on the window
+            const b = (vx * up.x + vy * up.y + vz * up.z) / depth; // how far up on the window
+            if (a < minA) minA = a;
+            if (a > maxA) maxA = a;
+            if (b < minB) minB = b;
+            if (b > maxB) maxB = b;
+          }
+
+          if (ahead === 0) continue; // entirely behind you
+
+          let minI, maxI, minJ, maxJ;
+          if (behind > 0) {
+            // straddles the camera plane, projection breaks, so cover everything
+            minI = 0;
+            maxI = xCells - 1;
+            minJ = 0;
+            maxJ = yCells - 1;
+          } else {
+            // a is in [-aMax, aMax]: shift to [0, 2aMax], divide to get 0..1, scale to cells
+            minI = Math.floor(((minA + aMax) / (2 * aMax)) * xCells);
+            maxI = Math.floor(((maxA + aMax) / (2 * aMax)) * xCells);
+            // b is flipped (up is positive, rows go down), so max b is the smallest j
+            minJ = Math.floor(((bMax - maxB) / (2 * bMax)) * yCells);
+            maxJ = Math.floor(((bMax - minB) / (2 * bMax)) * yCells);
+
+            if (maxI < 0 || minI >= xCells || maxJ < 0 || minJ >= yCells) continue; // off-screen
+            minI = Math.max(0, minI);
+            maxI = Math.min(xCells - 1, maxI);
+            minJ = Math.max(0, minJ);
+            maxJ = Math.min(yCells - 1, maxJ);
+          }
+
+          for (let i = minI; i <= maxI; i++) {
+            for (let j = minJ; j <= maxJ; j++) {
+              const [uX, uY, uZ] = cellDir(i, j);
+              const t = findIntersection(rect, uX, uY, uZ);
+              const idx = j * xCells + i;
+              if (t < ts[idx] && t < viewDistance) {
+                ts[idx] = t;
+                // ---- draw the pixel ----
+                const fade = (viewDistance - t) / viewDistance;
+                setPixel(i, j, rect[2].h, rect[2].s, rect[2].l * (0.25 + 0.75 * fade));
+              }
+            }
+          }
+        }
+
         bufCtx.putImageData(img, 0, 0);
         ctx.fillStyle = "black";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.imageSmoothingEnabled = false; // keep the blocky look instead of blurring
         ctx.drawImage(buf, 0, 0, canvas.width, canvas.height);
+        const frameMs = performance.now() - t0;
+        avgMs = avgMs * 0.9 + frameMs * 0.1;
+        const stat = JSON.stringify(player) + " MS per Frame: " + Number(avgMs);
+
+        if (document.getElementById("stats").textContent !== stat) document.getElementById("stats").textContent = stat;
         setTimeout(() => {
           requestAnimationFrame(loop);
         }, 0);

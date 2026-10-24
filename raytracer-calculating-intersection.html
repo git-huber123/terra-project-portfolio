@@ -1,0 +1,518 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ray Tracer</title>
+  </head>
+  <body style="display: flex; justify-content: center; align-items: center; flex-direction: column">
+    <canvas id="canvas"></canvas>
+    <p id="stats"></p>
+    <button onclick="document.body.innerHTML = ''">Clear all</button>
+    <script>
+      function findIntersection(rect, uX, uY, uZ) {
+        const xFace = player.x < rect[4] ? rect[4] : rect[3]; // since rect[3] is min x and rect[4] is max x
+        const yFace = player.y < rect[6] ? rect[6] : rect[5]; // repeat
+        const zFace = player.z < rect[8] ? rect[8] : rect[7];
+
+        const xT = (xFace - player.x) / uX;
+        const yT = (yFace - player.y) / uY;
+        const zT = (zFace - player.z) / uZ;
+
+        const maxX = rect[3];
+        const minX = rect[4];
+        const maxY = rect[5];
+        const minY = rect[6];
+        const maxZ = rect[7];
+        const minZ = rect[8];
+
+        let t = Infinity;
+
+        if (xT > 0 && xT < t) {
+          const xPredy = player.y + uY * xT;
+          const xPredz = player.z + uZ * xT;
+          if (xPredy >= minY && xPredy <= maxY && xPredz >= minZ && xPredz <= maxZ) {
+            t = xT;
+          }
+        }
+        if (yT > 0 && yT < t) {
+          const yPredx = player.x + uX * yT;
+          const yPredz = player.z + uZ * yT;
+          if (yPredx >= minX && yPredx <= maxX && yPredz >= minZ && yPredz <= maxZ) {
+            t = yT;
+          }
+        }
+        if (zT > 0 && zT < t) {
+          const zPredy = player.y + uY * zT;
+          const zPredx = player.x + uX * zT;
+          if (zPredx >= minX && zPredx <= maxX && zPredy >= minY && zPredy <= maxY) {
+            t = zT;
+          }
+        }
+
+        return t;
+      }
+
+      function drawRect(x, y, width, height, fillColor = "black", strokeColor = null, lineWidth = 1) {
+        if (fillColor !== null) {
+          ctx.fillStyle = fillColor;
+          ctx.fillRect(x, y, width, height);
+        }
+
+        if (strokeColor !== null) {
+          ctx.strokeStyle = strokeColor;
+          ctx.lineWidth = lineWidth;
+          ctx.strokeRect(x, y, width, height);
+        }
+      }
+
+      function tileHue(x, y) {
+        let n = (Math.imul(x, 374761393) + Math.imul(y, 668265263)) | 0;
+        n = Math.imul(n ^ (n >>> 13), 1274126177);
+        n ^= n >>> 16;
+        return (n >>> 0) % 360;
+      }
+
+      function updateBody() {
+        const base = player.z - 1.5; // feet height, so the body follows jumps and falls
+        const px = player.x;
+        const py = player.y;
+
+        const set = (rect, x0, y0, z0, x1, y1, z1) => {
+          rect[0].x = x0;
+          rect[0].y = y0;
+          rect[0].z = z0;
+          rect[1].x = x1;
+          rect[1].y = y1;
+          rect[1].z = z1;
+        };
+
+        // legs: 0.5 x 0.5, z 0 to 0.65, 0.25 gap between them
+        set(rects[bodyStart], px - 0.25, py - 0.625, base, px + 0.25, py - 0.125, base + 0.65);
+        set(rects[bodyStart + 1], px - 0.25, py + 0.125, base, px + 0.25, py + 0.625, base + 0.65);
+
+        // torso: 0.5 x 1.25, z 0.65 to 1.3
+        set(rects[bodyStart + 2], px - 0.25, py - 0.625, base + 0.65, px + 0.25, py + 0.625, base + 1.3);
+      }
+
+      function updateVertical() {
+        touchingFloor = false;
+
+        player.velocity -= gravity;
+        player.z += player.velocity;
+
+        // 1. the z = 0 ground plane (not a rect)
+        if (player.z - feetOffset < 0) {
+          player.z = feetOffset;
+          player.velocity = 0;
+          touchingFloor = true;
+        }
+
+        // 2. boxes
+        if (checkCollisions()) {
+          if (player.velocity <= 0) {
+            // moving down: landed on something. Snap feet to the top of the box we're inside.
+            const feet = player.z - feetOffset;
+            let top = -Infinity;
+            for (let i = 0; i < rects.length; i++) {
+              // use bodyStart instead of rects.length once the body is back
+              const r = rects[i];
+              if (areTouching(playerBox(), r)) {
+                top = Math.max(top, Math.max(r[0].z, r[1].z));
+              }
+            }
+            player.z = top + feetOffset + 0.0001; // tiny gap so resting doesn't count as overlap
+            touchingFloor = true;
+          } else {
+            // moving up: hit a ceiling. Back out and start falling.
+            player.z -= player.velocity;
+          }
+          player.velocity = 0;
+        }
+      }
+
+      function makeBoxes(count, seed) {
+        let s = seed;
+        const rand = () => {
+          s |= 0;
+          s = (s + 0x6d2b79f5) | 0;
+          let t = Math.imul(s ^ (s >>> 15), 1 | s);
+          t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+        const between = (a, b) => Math.floor(a + rand() * (b - a + 1));
+
+        const boxes = [];
+        while (boxes.length < count) {
+          const x = between(-30, 30),
+            y = between(-30, 30),
+            z = between(0, 14);
+          const dx = between(1, 6),
+            dy = between(1, 6),
+            dz = between(1, 8);
+          if (Math.abs(x) < 3 && Math.abs(y) < 3) continue; // keep the spawn clear
+          boxes.push([
+            { x, y, z },
+            { x: x + dx, y: y + dy, z: z + dz },
+            { h: between(0, 360), s: between(50, 90), l: between(40, 70) },
+          ]);
+        }
+        return boxes;
+      }
+
+      const floorSize = 50;
+      const floorColors = [];
+      for (let i = 0; i < floorSize * 2; i++) {
+        floorColors.push([]);
+        for (let j = 0; j < floorSize * 2; j++) {
+          floorColors[i].push({ h: Math.random() * 360, s: 60, l: 50 });
+        }
+      }
+
+      const rects = [
+        [
+          { x: 3, y: 3, z: 0 },
+          { x: 6, y: 6, z: 3 },
+          { h: 0, s: 100, l: 50 },
+        ], // original red box
+
+        // stepping pillars, heading out along +x (the way you face at the start)
+        [
+          { x: 8, y: -1, z: 0 },
+          { x: 10, y: 1, z: 1 },
+          { h: 30, s: 80, l: 50 },
+        ],
+        [
+          { x: 11.5, y: -1, z: 0 },
+          { x: 13.5, y: 1, z: 2 },
+          { h: 55, s: 80, l: 50 },
+        ],
+        [
+          { x: 15.5, y: 0, z: 0 },
+          { x: 17.5, y: 2, z: 3 },
+          { h: 100, s: 70, l: 45 },
+        ],
+        [
+          { x: 19.5, y: 2, z: 0 },
+          { x: 21.5, y: 4, z: 4 },
+          { h: 160, s: 70, l: 45 },
+        ],
+        [
+          { x: 23, y: 4, z: 0 },
+          { x: 25, y: 6, z: 5 },
+          { h: 200, s: 75, l: 50 },
+        ],
+
+        // goal platform
+        [
+          { x: 27, y: 6, z: 0 },
+          { x: 33, y: 12, z: 5 },
+          { h: 280, s: 70, l: 50 },
+        ],
+
+        // test ceiling
+        [
+          { x: -5, y: -5, z: 5 },
+          { x: -10, y: -10, z: 8 },
+          { h: 60, s: 75, l: 50 },
+        ],
+        //
+      ];
+
+      //      rects.push(...makeBoxes(100, 1));
+
+      for (const rect of rects) {
+        rect[3] = Math.max(rect[0].x, rect[1].x);
+        rect[4] = Math.min(rect[0].x, rect[1].x);
+        rect[5] = Math.max(rect[0].y, rect[1].y);
+        rect[6] = Math.min(rect[0].y, rect[1].y);
+        rect[7] = Math.max(rect[0].z, rect[1].z);
+        rect[8] = Math.min(rect[0].z, rect[1].z);
+      }
+
+      let totalDelay = 0;
+      let delaysCounted = 0;
+
+      /*const bodyStart = rects.length; // index of the first body part
+            rects.push(
+              [
+                { x: 0, y: 0, z: 0 },
+                { x: 0, y: 0, z: 0 },
+                { h: 220, s: 70, l: 40 },
+              ], // left leg
+              [
+                { x: 0, y: 0, z: 0 },
+                { x: 0, y: 0, z: 0 },
+                { h: 220, s: 70, l: 40 },
+              ], // right leg
+              [
+                { x: 0, y: 0, z: 0 },
+                { x: 0, y: 0, z: 0 },
+                { h: 120, s: 60, l: 40 },
+              ], // torso
+            );*/
+
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d");
+
+      canvas.width = 2500;
+      canvas.height = 1250;
+
+      const xDegs = 100;
+      const yDegs = 50;
+      const xScale = 0.2;
+      const yScale = 0.2;
+
+      const rayStep = 0.05;
+
+      const gravity = 0.05;
+      const jumpVelocity = 0.75;
+
+      const width = canvas.width / (xDegs / xScale);
+      const height = canvas.height / (yDegs / yScale);
+
+      const viewDistance = 40;
+
+      const player = { x: 0, y: 0, z: 1.5, xCenterAngle: 0, yCenterAngle: 0, velocity: 0 };
+
+      let touchingFloor = true;
+
+      const feetOffset = 1.5;
+
+      const maxBoxZ = Math.max(...rects.flatMap((r) => [r[0].z, r[1].z]));
+
+      function areTouching(a, b) {
+        const overlap = (a0, a1, b0, b1) => Math.min(a0, a1) < Math.max(b0, b1) && Math.max(a0, a1) > Math.min(b0, b1);
+
+        return overlap(a[0].x, a[1].x, b[0].x, b[1].x) && overlap(a[0].y, a[1].y, b[0].y, b[1].y) && overlap(a[0].z, a[1].z, b[0].z, b[1].z);
+      }
+
+      function checkCollisions() {
+        const half = 0.25; // player half-width in x and y
+        const me = playerBox();
+
+        // when you re-enable the body, replace rects.length with bodyStart
+        // so the player doesn't collide with their own body
+        const solidCount = rects.length;
+
+        for (let i = 0; i < solidCount; i++) {
+          if (areTouching(me, rects[i])) return true;
+        }
+        return false;
+      }
+
+      function playerBox() {
+        const half = 0.25;
+        return [
+          { x: player.x - half, y: player.y - half, z: player.z - feetOffset },
+          { x: player.x + half, y: player.y + half, z: player.z + 0.2 },
+        ];
+      }
+
+      function handleInput() {
+        const h = (player.xCenterAngle * Math.PI) / 180;
+        const fx = Math.cos(h); // forward vector
+        const fy = Math.sin(h);
+        const pitchLimit = 90 - yDegs / 2;
+
+        if (keysDown.has("KeyW")) {
+          player.x += fx * move;
+          if (checkCollisions()) player.x -= fx * move;
+          player.y += fy * move;
+          if (checkCollisions()) player.y -= fy * move;
+        }
+        if (keysDown.has("KeyS")) {
+          player.x -= fx * move;
+          if (checkCollisions()) player.x += fx * move;
+          player.y -= fy * move;
+          if (checkCollisions()) player.y += fy * move;
+        }
+        if (keysDown.has("KeyD")) {
+          player.x += fy * move;
+          if (checkCollisions()) player.x -= fy * move;
+          player.y -= fx * move;
+          if (checkCollisions()) player.y += fx * move;
+        } // right = (fy, -fx)
+        if (keysDown.has("KeyA")) {
+          player.x -= fy * move;
+          if (checkCollisions()) player.x += fy * move;
+          player.y += fx * move;
+          if (checkCollisions()) player.y -= fx * move;
+        }
+
+        if (keysDown.has("Space") && touchingFloor) {
+          player.velocity += jumpVelocity;
+        }
+        //if (keysDown.has("ShiftLeft") || keysDown.has("ShiftRight")) player.z -= move;
+
+        if (keysDown.has("ArrowUp")) {
+          player.yCenterAngle = Math.max(-pitchLimit, player.yCenterAngle - moveAngle);
+        }
+        if (keysDown.has("ArrowDown")) {
+          player.yCenterAngle = Math.min(pitchLimit, player.yCenterAngle + moveAngle);
+        }
+        if (keysDown.has("ArrowLeft")) {
+          player.xCenterAngle = (player.xCenterAngle + moveAngle) % 360;
+        }
+        if (keysDown.has("ArrowRight")) {
+          player.xCenterAngle = (player.xCenterAngle - moveAngle + 360) % 360;
+        }
+      }
+
+      const buf = document.createElement("canvas");
+      buf.width = xDegs / xScale;
+      buf.height = yDegs / yScale;
+      const bufCtx = buf.getContext("2d");
+      const img = bufCtx.createImageData(buf.width, buf.height);
+
+      function hslToRgb(h, s, l) {
+        s /= 100;
+        l /= 100;
+        const k = (n) => (n + h / 30) % 12;
+        const a = s * Math.min(l, 1 - l);
+        const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+        return [f(0) * 255, f(8) * 255, f(4) * 255];
+      }
+
+      function setPixel(i, j, h, s, l) {
+        const [r, g, b] = hslToRgb(h, s, l);
+        const p = (j * buf.width + i) * 4;
+        img.data[p] = r;
+        img.data[p + 1] = g;
+        img.data[p + 2] = b;
+        img.data[p + 3] = 255;
+      }
+
+      function loop() {
+        const t0 = performance.now();
+        handleInput();
+        updateVertical();
+
+        //updateBody();
+
+        const th = (player.xCenterAngle * Math.PI) / 180;
+        const ph = (player.yCenterAngle * Math.PI) / 180;
+
+        const fwd = { x: Math.cos(th) * Math.cos(ph), y: Math.sin(th) * Math.cos(ph), z: -Math.sin(ph) };
+        const right = { x: Math.sin(th), y: -Math.cos(th), z: 0 };
+        const up = { x: Math.cos(th) * Math.sin(ph), y: Math.sin(th) * Math.sin(ph), z: Math.cos(ph) };
+
+        const xCells = xDegs / xScale;
+        const yCells = yDegs / yScale;
+        const aMax = Math.tan((xDegs / 2) * (Math.PI / 180));
+        const bMax = (aMax * canvas.height) / canvas.width;
+
+        img.data.fill(0);
+
+        for (let i = 0; i < xCells; i++) {
+          for (let j = 0; j < yCells; j++) {
+            const a = (((i + 0.5) / xCells) * 2 - 1) * aMax; // -aMax (left) to +aMax (right)
+            const b = (1 - ((j + 0.5) / yCells) * 2) * bMax; // +bMax (top) to -bMax (bottom)
+
+            let dx = fwd.x + right.x * a + up.x * b;
+            let dy = fwd.y + right.y * a + up.y * b;
+            let dz = fwd.z + right.z * a + up.z * b;
+            const len = Math.hypot(dx, dy, dz);
+
+            const x = player.x + (dx / len) * viewDistance;
+            const y = player.y + (dy / len) * viewDistance;
+            const z = player.z + (dz / len) * viewDistance;
+
+            const uX = dx / len;
+            const uY = dy / len;
+            const uZ = dz / len;
+
+            let t = Infinity;
+            let chosenRect = null;
+
+            for (const rect of rects) {
+              let rT = findIntersection(rect, uX, uY, uZ);
+              if (rT < t) {
+                t = rT;
+                chosenRect = rect;
+              }
+            }
+
+            let hitRect = false;
+
+            if (t !== Infinity && t < viewDistance) {
+              const intersection = { x: player.x + uX * t, y: player.y + uY * t, z: player.z + uZ * t };
+
+              const dist = Math.hypot(intersection.x - player.x, intersection.y - player.y, intersection.z - player.z);
+              const fade = (viewDistance - dist) / viewDistance;
+              setPixel(i, j, chosenRect[2].h, chosenRect[2].s, chosenRect[2].l * (0.25 + 0.75 * fade));
+
+              hitRect = true;
+            }
+
+            if (hitRect) continue;
+
+            if (uZ >= 0) continue; // ray points at or above the horizon, so it never reaches the floor
+
+            const ft = -player.z / uZ;
+            if (ft < viewDistance) {
+              const hitX = Math.floor(player.x + uX * ft);
+              const hitY = Math.floor(player.y + uY * ft);
+              const fade = (viewDistance - ft) / viewDistance;
+              setPixel(i, j, tileHue(hitX, hitY), 60, 50 * (0.25 + 0.75 * fade));
+            }
+
+            if (uZ > 0 && tracedZ > maxBoxZ) break;
+          }
+        }
+
+        totalDelay += performance.now() - t0;
+        delaysCounted += 1;
+        const stat = JSON.stringify(player) + " MS per Frame: " + Number(totalDelay / delaysCounted);
+
+        if (document.getElementById("stats").textContent !== stat) document.getElementById("stats").textContent = stat;
+        bufCtx.putImageData(img, 0, 0);
+        ctx.fillStyle = "black";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.imageSmoothingEnabled = false; // keep the blocky look instead of blurring
+        ctx.drawImage(buf, 0, 0, canvas.width, canvas.height);
+        setTimeout(() => {
+          requestAnimationFrame(loop);
+        }, 0);
+      }
+
+      const keysDown = new Set();
+      const trackedKeys = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ShiftLeft", "ShiftRight", "Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
+
+      const move = 0.15;
+
+      const moveAngle = 1;
+
+      window.addEventListener("keydown", (event) => {
+        if (!trackedKeys.has(event.code)) return;
+
+        event.preventDefault(); // Stops arrows/space from scrolling the page
+        keysDown.add(event.code);
+      });
+
+      window.addEventListener("keyup", (event) => {
+        keysDown.delete(event.code);
+      });
+
+      const mouseSensitivity = 0.08; // degrees per pixel of mouse movement
+
+      canvas.addEventListener("click", () => {
+        canvas.requestPointerLock();
+      });
+
+      window.addEventListener("mousemove", (event) => {
+        if (document.pointerLockElement !== canvas) return;
+
+        const pitchLimit = 90 - yDegs / 2; // keep this the same as in handleInput
+
+        // mouse right -> turn right (angle goes down, matching your ArrowRight)
+        player.xCenterAngle = (((player.xCenterAngle - event.movementX * mouseSensitivity) % 360) + 360) % 360;
+
+        // mouse down -> look down (positive pitch is down, matching your ArrowDown)
+        player.yCenterAngle = Math.max(-pitchLimit, Math.min(pitchLimit, player.yCenterAngle + event.movementY * mouseSensitivity));
+      });
+
+      requestAnimationFrame(loop);
+    </script>
+  </body>
+</html>
