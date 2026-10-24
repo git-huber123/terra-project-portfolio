@@ -160,6 +160,128 @@
         return boxes;
       }
 
+      function placeBlock() {
+        const th = (player.xCenterAngle * Math.PI) / 180;
+        const ph = (player.yCenterAngle * Math.PI) / 180;
+        targetRect = null;
+
+        const fwd = { x: Math.cos(th) * Math.cos(ph), y: Math.sin(th) * Math.cos(ph), z: -Math.sin(ph) };
+
+        const uX = fwd.x;
+        const uY = fwd.y;
+        const uZ = fwd.z;
+        let t = Infinity;
+
+        // only set when that axis wins, so they stay undefined otherwise
+        let xFace, yFace, zFace, xT, yT, zT, minX, minY, minZ;
+
+        for (const rect of rects) {
+          const rxFace = player.x < rect[4] ? rect[4] : rect[3];
+          const ryFace = player.y < rect[6] ? rect[6] : rect[5];
+          const rzFace = player.z < rect[8] ? rect[8] : rect[7];
+
+          const rxT = (rxFace - player.x) / uX;
+          const ryT = (ryFace - player.y) / uY;
+          const rzT = (rzFace - player.z) / uZ;
+
+          const rMaxX = rect[3];
+          const rMinX = rect[4];
+          const rMaxY = rect[5];
+          const rMinY = rect[6];
+          const rMaxZ = rect[7];
+          const rMinZ = rect[8];
+
+          if (rxT > 0 && rxT < t) {
+            const xPredy = player.y + uY * rxT;
+            const xPredz = player.z + uZ * rxT;
+            if (xPredy >= rMinY && xPredy <= rMaxY && xPredz >= rMinZ && xPredz <= rMaxZ) {
+              t = rxT;
+              xT = rxT;
+              xFace = rxFace;
+              minX = rMinX;
+              targetRect = rect;
+            }
+          }
+          if (ryT > 0 && ryT < t) {
+            const yPredx = player.x + uX * ryT;
+            const yPredz = player.z + uZ * ryT;
+            if (yPredx >= rMinX && yPredx <= rMaxX && yPredz >= rMinZ && yPredz <= rMaxZ) {
+              t = ryT;
+              yT = ryT;
+              yFace = ryFace;
+              minY = rMinY;
+              targetRect = rect;
+            }
+          }
+          if (rzT > 0 && rzT < t) {
+            const zPredy = player.y + uY * rzT;
+            const zPredx = player.x + uX * rzT;
+            if (zPredx >= rMinX && zPredx <= rMaxX && zPredy >= rMinY && zPredy <= rMaxY) {
+              t = rzT;
+              zT = rzT;
+              zFace = rzFace;
+              minZ = rMinZ;
+              targetRect = rect;
+            }
+          }
+        }
+
+        let corner1, corner2;
+
+        let point = { x: player.x + uX * t, y: player.y + uY * t, z: player.z + uZ * t };
+
+        if (xT === t) {
+          point.x -= xFace === minX ? 1 : -1;
+          point.y = Math.floor(point.y);
+          point.z = Math.floor(point.z);
+          corner1 = structuredClone(point);
+          point.y += 1;
+          point.z += 1;
+          point.x = xFace;
+          corner2 = structuredClone(point);
+        } else if (yT === t) {
+          point.y -= yFace === minY ? 1 : -1;
+          point.x = Math.floor(point.x);
+          point.z = Math.floor(point.z);
+          corner1 = structuredClone(point);
+          point.x += 1;
+          point.z += 1;
+          point.y = yFace;
+          corner2 = structuredClone(point);
+        } else if (zT === t) {
+          point.z -= zFace === minZ ? 1 : -1;
+          point.y = Math.floor(point.y);
+          point.x = Math.floor(point.x);
+          corner1 = structuredClone(point);
+          point.y += 1;
+          point.x += 1;
+          point.z = zFace;
+          corner2 = structuredClone(point);
+        } else if (t === Infinity && uZ < 0) {
+          t = -player.z / uZ;
+          point = { x: Math.floor(player.x + uX * t), y: Math.floor(player.y + uY * t), z: 0 };
+          corner1 = structuredClone(point);
+          point.x += 1;
+          point.y += 1;
+          point.z = 1;
+          corner2 = structuredClone(point);
+        }
+
+        if (t > reach) targetRect = null;
+
+        if (t === Infinity || t > reach) return;
+
+        const r = [corner1, corner2, { h: Math.random() * 360, s: 100, l: 50 }];
+        r[3] = Math.max(r[0].x, r[1].x);
+        r[4] = Math.min(r[0].x, r[1].x);
+        r[5] = Math.max(r[0].y, r[1].y);
+        r[6] = Math.min(r[0].y, r[1].y);
+        r[7] = Math.max(r[0].z, r[1].z);
+        r[8] = Math.min(r[0].z, r[1].z);
+        if (areTouching(playerBox(), r)) return;
+        return r;
+      }
+
       const floorSize = 50;
       const floorColors = [];
       for (let i = 0; i < floorSize * 2; i++) {
@@ -170,7 +292,7 @@
       }
 
       const rects = [
-        [
+        /*[
           { x: 3, y: 3, z: 0 },
           { x: 6, y: 6, z: 3 },
           { h: 0, s: 100, l: 50 },
@@ -216,19 +338,10 @@
           { x: -10, y: -10, z: 8 },
           { h: 60, s: 75, l: 50 },
         ],
-        //
+        //*/
       ];
 
-      rects.push(...makeBoxes(100, 1));
-
-      for (const rect of rects) {
-        rect[3] = Math.max(rect[0].x, rect[1].x);
-        rect[4] = Math.min(rect[0].x, rect[1].x);
-        rect[5] = Math.max(rect[0].y, rect[1].y);
-        rect[6] = Math.min(rect[0].y, rect[1].y);
-        rect[7] = Math.max(rect[0].z, rect[1].z);
-        rect[8] = Math.min(rect[0].z, rect[1].z);
-      }
+      //rects.push(...makeBoxes(100, 1));
 
       let totalDelay = 0;
       let delaysCounted = 0;
@@ -269,6 +382,10 @@
 
       const rayStep = 0.05;
 
+      const reach = 15;
+
+      let targetRect = null;
+
       const aMax = Math.tan((xDegs / 2) * (Math.PI / 180));
       const bMax = (aMax * canvas.height) / canvas.width;
 
@@ -278,7 +395,7 @@
       const width = canvas.width / (xDegs / xScale);
       const height = canvas.height / (yDegs / yScale);
 
-      const viewDistance = 40;
+      const viewDistance = 100;
 
       const player = { x: 0, y: 0, z: 1.5, xCenterAngle: 0, yCenterAngle: 0, velocity: 0 };
 
@@ -317,11 +434,112 @@
         ];
       }
 
+      let wantBreak = false;
+      let wantPlace = false;
+
+      window.addEventListener("mousedown", (e) => {
+        if (document.pointerLockElement !== canvas) return; // the first click only grabs the mouse
+        if (e.button === 0) wantBreak = true;
+        if (e.button === 2) wantPlace = true;
+      });
+
+      const TREE_RADIUS = 50;
+
+      const TRUNK = { h: 25, s: 50, l: 28 };
+      const LEAF = { h: 115, s: 55, l: 32 };
+
+      // [dx, dy, dz, color], relative to the root block
+      // Your cross section, rotated around the vertical axis:
+      // each layer's arms extend the same distance along x and y.
+      const treeOffsets = [
+        // trunk
+        [0, 0, 0, TRUNK],
+        [0, 0, 1, TRUNK],
+        // widest layer (the "+++++" row): arms of length 2
+        [0, 0, 2, LEAF],
+        [1, 0, 2, LEAF],
+        [2, 0, 2, LEAF],
+        [-1, 0, 2, LEAF],
+        [-2, 0, 2, LEAF],
+        [0, 1, 2, LEAF],
+        [0, 2, 2, LEAF],
+        [0, -1, 2, LEAF],
+        [0, -2, 2, LEAF],
+        [1, 1, 2, LEAF],
+        [1, -1, 2, LEAF],
+        [-1, 1, 2, LEAF],
+        [-1, -1, 2, LEAF],
+        // middle layer ("_+++_"): arms of length 1
+        [0, 0, 3, LEAF],
+        [1, 0, 3, LEAF],
+        [-1, 0, 3, LEAF],
+        [0, 1, 3, LEAF],
+        [0, -1, 3, LEAF],
+        // top
+        [0, 0, 4, LEAF],
+      ];
+
+      function spawnTree(rootX, rootY) {
+        rootX = Math.floor(rootX);
+        rootY = Math.floor(rootY);
+
+        // root must be within 50 units of the player
+        if (Math.hypot(rootX - player.x, rootY - player.y) > TREE_RADIUS) return false;
+
+        const tree = [];
+        for (const [dx, dy, dz, color] of treeOffsets) {
+          const x = rootX + dx,
+            y = rootY + dy,
+            z = dz; // root sits on the ground at z = 0
+          const r = [{ x, y, z }, { x: x + 1, y: y + 1, z: z + 1 }, { ...color }];
+          r[3] = x + 1;
+          r[4] = x;
+          r[5] = y + 1;
+          r[6] = y;
+          r[7] = z + 1;
+          r[8] = z;
+          tree.push(r);
+        }
+
+        // don't plant a tree on top of the player
+        if (tree.some((r) => areTouching(playerBox(), r))) return false;
+
+        rects.push(...tree);
+        return true;
+      }
+
+      // plant `count` trees at random spots around the player
+      function spawnTrees(count) {
+        for (let n = 0; n < count; n++) {
+          const angle = Math.random() * Math.PI * 2;
+          const dist = Math.sqrt(Math.random()) * TREE_RADIUS; // sqrt keeps them evenly spread instead of bunched at the center
+          spawnTree(player.x + Math.cos(angle) * dist, player.y + Math.sin(angle) * dist);
+          console.log("spawned");
+        }
+      }
+
+      spawnTrees(Math.floor(Math.random() * 20) + 10);
+
+      for (const rect of rects) {
+        rect[3] = Math.max(rect[0].x, rect[1].x);
+        rect[4] = Math.min(rect[0].x, rect[1].x);
+        rect[5] = Math.max(rect[0].y, rect[1].y);
+        rect[6] = Math.min(rect[0].y, rect[1].y);
+        rect[7] = Math.max(rect[0].z, rect[1].z);
+        rect[8] = Math.min(rect[0].z, rect[1].z);
+      }
+
       function handleInput() {
         const h = (player.xCenterAngle * Math.PI) / 180;
         const fx = Math.cos(h); // forward vector
         const fy = Math.sin(h);
         const pitchLimit = 90 - yDegs / 2;
+
+        if (wantPlace) {
+          wantPlace = false;
+          const block = placeBlock();
+          if (block) rects.push(block);
+        }
 
         if (keysDown.has("KeyW")) {
           player.x += fx * move;
@@ -405,6 +623,7 @@
         const t0 = performance.now();
         handleInput();
         updateVertical();
+        placeBlock();
 
         //updateBody();
 
@@ -427,79 +646,77 @@
             if (ft >= viewDistance) continue;
             ts[j * xCells + i] = ft;
             const fade = (viewDistance - ft) / viewDistance;
-            setPixel(i, j, tileHue(Math.floor(player.x + uX * ft), Math.floor(player.y + uY * ft)), 60, 50 * (0.25 + 0.75 * fade));
+            setPixel(i, j, tileHue(Math.floor(player.x + uX * ft), Math.floor(player.y + uY * ft)), 40, 30 * (0.25 + 0.75 * fade));
           }
         }
 
-        for (let i = 0; i < xCells; i++) {
-          for (let j = 0; j < yCells; j++) {
-            const [uX, uY, uZ] = cellDir(i, j);
-            if (uZ >= 0) continue;
-            const ft = -player.z / uZ;
-            if (ft >= viewDistance) continue;
-            ts[j * xCells + i] = ft;
-            const fade = (viewDistance - ft) / viewDistance;
-            setPixel(i, j, tileHue(Math.floor(player.x + uX * ft), Math.floor(player.y + uY * ft)), 60, 50 * (0.25 + 0.75 * fade));
-          }
-        }
+        const near = 0.05;
+        const cv = new Float64Array(24); // corner offsets from the player
+        const cd = new Float64Array(8); // corner depths along fwd
 
+        // inside loop(), replacing your whole `for (const rect of rects)` block:
         for (const rect of rects) {
-          // ---- find the vectors here ----
           let minA = Infinity,
             maxA = -Infinity,
             minB = Infinity,
             maxB = -Infinity;
-          let ahead = 0,
-            behind = 0;
 
-          for (let c = 0; c < 8; c++) {
-            // the 3 bits of c pick min or max on each axis, giving all 8 corners
-            const cx = c & 1 ? rect[3] : rect[4];
-            const cy = c & 2 ? rect[5] : rect[6];
-            const cz = c & 4 ? rect[7] : rect[8];
-
-            const vx = cx - player.x,
-              vy = cy - player.y,
-              vz = cz - player.z;
-            const depth = vx * fwd.x + vy * fwd.y + vz * fwd.z; // how far ahead
-
-            if (depth <= 0) {
-              behind++;
-              continue;
-            }
-            ahead++;
-
-            const a = (vx * right.x + vy * right.y + vz * right.z) / depth; // how far right on the window
-            const b = (vx * up.x + vy * up.y + vz * up.z) / depth; // how far up on the window
+          const addPoint = (vx, vy, vz, depth) => {
+            const a = (vx * right.x + vy * right.y + vz * right.z) / depth;
+            const b = (vx * up.x + vy * up.y + vz * up.z) / depth;
             if (a < minA) minA = a;
             if (a > maxA) maxA = a;
             if (b < minB) minB = b;
             if (b > maxB) maxB = b;
+          };
+
+          // the 8 corners: the 3 bits of c pick min or max on each axis
+          for (let c = 0; c < 8; c++) {
+            const vx = (c & 1 ? rect[3] : rect[4]) - player.x;
+            const vy = (c & 2 ? rect[5] : rect[6]) - player.y;
+            const vz = (c & 4 ? rect[7] : rect[8]) - player.z;
+            const depth = vx * fwd.x + vy * fwd.y + vz * fwd.z;
+
+            cv[c * 3] = vx;
+            cv[c * 3 + 1] = vy;
+            cv[c * 3 + 2] = vz;
+            cd[c] = depth;
+
+            if (depth > near) addPoint(vx, vy, vz, depth);
           }
 
-          if (ahead === 0) continue; // entirely behind you
-
-          let minI, maxI, minJ, maxJ;
-          if (behind > 0) {
-            // straddles the camera plane, projection breaks, so cover everything
-            minI = 0;
-            maxI = xCells - 1;
-            minJ = 0;
-            maxJ = yCells - 1;
-          } else {
-            // a is in [-aMax, aMax]: shift to [0, 2aMax], divide to get 0..1, scale to cells
-            minI = Math.floor(((minA + aMax) / (2 * aMax)) * xCells);
-            maxI = Math.floor(((maxA + aMax) / (2 * aMax)) * xCells);
-            // b is flipped (up is positive, rows go down), so max b is the smallest j
-            minJ = Math.floor(((bMax - maxB) / (2 * bMax)) * yCells);
-            maxJ = Math.floor(((bMax - minB) / (2 * bMax)) * yCells);
-
-            if (maxI < 0 || minI >= xCells || maxJ < 0 || minJ >= yCells) continue; // off-screen
-            minI = Math.max(0, minI);
-            maxI = Math.min(xCells - 1, maxI);
-            minJ = Math.max(0, minJ);
-            maxJ = Math.min(yCells - 1, maxJ);
+          // the 12 edges: each corner paired with the corner that differs in one bit.
+          // If one end is in front of the near plane and the other isn't, project the crossing point.
+          for (let c = 0; c < 8; c++) {
+            for (let bit = 1; bit <= 4; bit <<= 1) {
+              if (c & bit) continue; // visit each edge once, from its lower corner
+              const d = c | bit;
+              if (cd[c] > near !== cd[d] > near) {
+                const k = (cd[c] - near) / (cd[c] - cd[d]); // how far along the edge it crosses
+                addPoint(
+                  cv[c * 3] + (cv[d * 3] - cv[c * 3]) * k,
+                  cv[c * 3 + 1] + (cv[d * 3 + 1] - cv[c * 3 + 1]) * k,
+                  cv[c * 3 + 2] + (cv[d * 3 + 2] - cv[c * 3 + 2]) * k,
+                  near,
+                );
+              }
+            }
           }
+
+          if (minA === Infinity) continue; // nothing in front of you at all
+
+          // a is in [-aMax, aMax]: shift to [0, 2aMax], divide to get 0..1, scale to cells
+          let minI = Math.floor(((minA + aMax) / (2 * aMax)) * xCells);
+          let maxI = Math.floor(((maxA + aMax) / (2 * aMax)) * xCells);
+          // b is flipped (up is positive, rows go down), so max b is the smallest j
+          let minJ = Math.floor(((bMax - maxB) / (2 * bMax)) * yCells);
+          let maxJ = Math.floor(((bMax - minB) / (2 * bMax)) * yCells);
+
+          if (maxI < 0 || minI >= xCells || maxJ < 0 || minJ >= yCells) continue; // off-screen
+          minI = Math.max(0, minI);
+          maxI = Math.min(xCells - 1, maxI);
+          minJ = Math.max(0, minJ);
+          maxJ = Math.min(yCells - 1, maxJ);
 
           for (let i = minI; i <= maxI; i++) {
             for (let j = minJ; j <= maxJ; j++) {
@@ -508,14 +725,31 @@
               const idx = j * xCells + i;
               if (t < ts[idx] && t < viewDistance) {
                 ts[idx] = t;
-                // ---- draw the pixel ----
                 const fade = (viewDistance - t) / viewDistance;
-                setPixel(i, j, rect[2].h, rect[2].s, rect[2].l * (0.25 + 0.75 * fade));
+                let h = rect[2].h,
+                  s = rect[2].s,
+                  l = rect[2].l * (0.25 + 0.75 * fade);
+
+                if (rect === targetRect) {
+                  const px = player.x + uX * t,
+                    py = player.y + uY * t,
+                    pz = player.z + uZ * t;
+                  const eps = 0.015 + t * 0.004; // grows with distance so the line has a steady on-screen thickness
+                  let near = 0;
+                  if (Math.abs(px - rect[3]) < eps || Math.abs(px - rect[4]) < eps) near++;
+                  if (Math.abs(py - rect[5]) < eps || Math.abs(py - rect[6]) < eps) near++;
+                  if (Math.abs(pz - rect[7]) < eps || Math.abs(pz - rect[8]) < eps) near++;
+                  if (near >= 2) {
+                    s = 0;
+                    l = 95;
+                  } // dark outline; use l = 95 for white
+                }
+
+                setPixel(i, j, h, s, l);
               }
             }
           }
         }
-
         bufCtx.putImageData(img, 0, 0);
         ctx.fillStyle = "black";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -558,7 +792,7 @@
       window.addEventListener("mousemove", (event) => {
         if (document.pointerLockElement !== canvas) return;
 
-        const pitchLimit = 90 - yDegs / 2; // keep this the same as in handleInput
+        const pitchLimit = 90; // - yDegs / 2; // keep this the same as in handleInput
 
         // mouse right -> turn right (angle goes down, matching your ArrowRight)
         player.xCenterAngle = (((player.xCenterAngle - event.movementX * mouseSensitivity) % 360) + 360) % 360;
