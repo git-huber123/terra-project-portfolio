@@ -7,6 +7,7 @@
   </head>
   <body style="display: flex; justify-content: center; align-items: center; flex-direction: column">
     <canvas id="canvas"></canvas>
+    <div style="display: flex; justify-content: center; align-items: center; gap: 15px" id="hotbar"></div>
     <p id="stats"></p>
     <button onclick="document.body.innerHTML = ''">Clear all</button>
     <script>
@@ -95,7 +96,7 @@
         set(rects[bodyStart + 2], px - 0.25, py - 0.625, base + 0.65, px + 0.25, py + 0.625, base + 1.3);
       }
 
-      function updateVertical() {
+      function updateVertical(dT) {
         touchingFloor = false;
 
         player.velocity -= gravity;
@@ -282,13 +283,21 @@
         return r;
       }
 
-      const floorSize = 50;
-      const floorColors = [];
-      for (let i = 0; i < floorSize * 2; i++) {
-        floorColors.push([]);
-        for (let j = 0; j < floorSize * 2; j++) {
-          floorColors[i].push({ h: Math.random() * 360, s: 60, l: 50 });
-        }
+      function msg(msg) {
+        drawRect(0, 0, canvas.width, canvas.height, "rgba(0, 0, 0, 0.6)");
+        text(msg, canvas.width / 2, canvas.height / 2, 200, "white");
+        text("Enter to unpause", canvas.width / 2, (canvas.height * 2) / 3, 125, "white");
+        paused = true;
+      }
+
+      function text(str, x, y, size = 32, color = "white", align = "center") {
+        ctx.save();
+        ctx.font = `${size}px sans-serif`;
+        ctx.fillStyle = color;
+        ctx.textAlign = align; // "left", "center" or "right" for x
+        ctx.textBaseline = "middle"; // y is the vertical center of the text
+        ctx.fillText(str, x, y);
+        ctx.restore();
       }
 
       const rects = [
@@ -375,8 +384,8 @@
 
       const xDegs = 100;
       const yDegs = 50;
-      const xScale = 0.2;
-      const yScale = 0.2;
+      const xScale = 0.1;
+      const yScale = 0.1;
       const xCells = xDegs / xScale;
       const yCells = yDegs / yScale;
 
@@ -403,8 +412,38 @@
 
       const feetOffset = 1.5;
 
+      const symbolSpacing = Math.floor(canvas.width / 70);
+      const symbolWidth = symbolSpacing * 2;
+      const symbolHeightStart = canvas.height - symbolWidth - symbolSpacing;
+      const symbolOutlineThickness = symbolWidth / 10;
+
+      const colorMap = {
+        wood: { h: 25, s: 50, l: 28 },
+        leaf: { h: 115, s: 55, l: 32 },
+      };
+
+      let health = 20;
+      let lastGroundZ = 1.5;
+      let wasInAirLastFrame = false;
+      const fallThreshold = 6;
+      const damagePerBlock = 1;
+
+      const hotbar = [
+        {
+          name: "wool",
+          count: 25,
+        },
+      ];
+      const hotbarSize = 9;
+      let hotbarSlot = 0;
+
       const maxBoxZ = Math.max(...rects.flatMap((r) => [r[0].z, r[1].z]));
       const ts = new Float32Array(xCells * yCells);
+
+      let lastRegen = performance.now();
+      const regenWait = 3000;
+
+      let paused = false;
 
       function areTouching(a, b) {
         const overlap = (a0, a1, b0, b1) => Math.min(a0, a1) < Math.max(b0, b1) && Math.max(a0, a1) > Math.min(b0, b1);
@@ -442,6 +481,18 @@
         if (e.button === 0) wantBreak = true;
         if (e.button === 2) wantPlace = true;
       });
+
+      let scrollDir = 0; // -1 = up, 1 = down, 0 = none this frame
+
+      window.addEventListener(
+        "wheel",
+        (e) => {
+          if (document.pointerLockElement !== canvas) return; // only while playing
+          e.preventDefault(); // stops the page from scrolling
+          scrollDir = Math.sign(e.deltaY);
+        },
+        { passive: false },
+      );
 
       const TREE_RADIUS = 50;
 
@@ -498,6 +549,7 @@
           r[6] = y;
           r[7] = z + 1;
           r[8] = z;
+          r[10] = color === TRUNK ? "wood" : "leaf";
           tree.push(r);
         }
 
@@ -520,6 +572,29 @@
 
       spawnTrees(Math.floor(Math.random() * 20) + 10);
 
+      const FADE_LEVELS = 64;
+      const floorRGB = new Uint8ClampedArray(360 * FADE_LEVELS * 3);
+      for (let h = 0; h < 360; h++) {
+        for (let f = 0; f < FADE_LEVELS; f++) {
+          const [r, g, b] = hslToRgb(h, 60, 30 * (0.25 + 0.75 * (f / (FADE_LEVELS - 1))));
+          const o = (h * FADE_LEVELS + f) * 3;
+          floorRGB[o] = r;
+          floorRGB[o + 1] = g;
+          floorRGB[o + 2] = b;
+        }
+      }
+
+      const colA = new Float32Array(xCells);
+      const rowB = new Float32Array(yCells);
+      const invLen = new Float32Array(xCells * yCells);
+      const dirX = new Float32Array(xCells * yCells);
+      const dirY = new Float32Array(xCells * yCells);
+      const dirZ = new Float32Array(xCells * yCells);
+
+      for (let i = 0; i < xCells; i++) colA[i] = (((i + 0.5) / xCells) * 2 - 1) * aMax;
+      for (let j = 0; j < yCells; j++) rowB[j] = (1 - ((j + 0.5) / yCells) * 2) * bMax;
+      for (let j = 0; j < yCells; j++) for (let i = 0; i < xCells; i++) invLen[j * xCells + i] = 1 / Math.sqrt(1 + colA[i] * colA[i] + rowB[j] * rowB[j]);
+
       for (const rect of rects) {
         rect[3] = Math.max(rect[0].x, rect[1].x);
         rect[4] = Math.min(rect[0].x, rect[1].x);
@@ -529,6 +604,8 @@
         rect[8] = Math.min(rect[0].z, rect[1].z);
       }
 
+      let lastScroll = performance.now();
+
       function handleInput() {
         const h = (player.xCenterAngle * Math.PI) / 180;
         const fx = Math.cos(h); // forward vector
@@ -537,8 +614,60 @@
 
         if (wantPlace) {
           wantPlace = false;
-          const block = placeBlock();
-          if (block) rects.push(block);
+          const selectedBlock = hotbar[hotbarSlot];
+          if (selectedBlock) {
+            if (selectedBlock.count > 1) {
+              hotbar[hotbarSlot].count -= 1;
+              const block = placeBlock();
+              if (block) {
+                if (colorMap[selectedBlock.name]) block[2] = colorMap[selectedBlock.name];
+                block[10] = selectedBlock.name;
+                rects.push(block);
+              }
+            } else if (selectedBlock.count === 1) {
+              hotbar.splice(hotbarSlot, 1);
+              const block = placeBlock();
+              if (block) {
+                if (colorMap[selectedBlock.name]) block[2] = colorMap[selectedBlock.name];
+                block[10] = selectedBlock.name;
+                rects.push(block);
+              }
+            }
+          }
+        }
+
+        if (wantBreak) {
+          wantBreak = false;
+          if (targetRect) {
+            const typeOfBlock = targetRect[10] || "wool";
+            let addedBlock = false;
+            for (const block of hotbar) {
+              if (block.name === typeOfBlock) {
+                block.count += 1;
+                addedBlock = true;
+              }
+            }
+            if (!addedBlock && hotbar.length < hotbarSize) {
+              hotbar.push({
+                name: typeOfBlock,
+                count: 1,
+              });
+              addedBlock = true;
+            }
+            if (addedBlock) {
+              const idx = rects.indexOf(targetRect);
+              if (idx !== -1) rects.splice(idx, 1);
+              targetRect = null;
+            } else {
+              msg("Not enough hotbar space!");
+            }
+          }
+        }
+
+        if (scrollDir !== 0 && performance.now() - lastScroll > 50) {
+          hotbarSlot = (hotbarSlot + scrollDir + Math.min(hotbarSize, hotbar.length)) % Math.min(hotbarSize, hotbar.length);
+          scrollDir = 0;
+          lastScroll = performance.now();
         }
 
         if (keysDown.has("KeyW")) {
@@ -591,6 +720,8 @@
       const bufCtx = buf.getContext("2d");
       const img = bufCtx.createImageData(buf.width, buf.height);
 
+      const hitIdx = new Int32Array(xCells * yCells);
+
       function hslToRgb(h, s, l) {
         s /= 100;
         l /= 100;
@@ -609,20 +740,14 @@
         img.data[p + 3] = 255;
       }
 
-      function loop() {
-        function cellDir(i, j) {
-          const a = (((i + 0.5) / xCells) * 2 - 1) * aMax;
-          const b = (1 - ((j + 0.5) / yCells) * 2) * bMax;
-          const dx = fwd.x + right.x * a + up.x * b;
-          const dy = fwd.y + right.y * a + up.y * b;
-          const dz = fwd.z + right.z * a + up.z * b;
-          const len = Math.hypot(dx, dy, dz);
-          return [dx / len, dy / len, dz / len];
-        }
+      let lastTime = performance.now();
 
+      function loop() {
+        if (paused) return;
         const t0 = performance.now();
+        const dT = t0 - lastTime;
         handleInput();
-        updateVertical();
+        updateVertical(dT);
         placeBlock();
 
         //updateBody();
@@ -634,19 +759,52 @@
         const right = { x: Math.sin(th), y: -Math.cos(th), z: 0 };
         const up = { x: Math.cos(th) * Math.sin(ph), y: Math.sin(th) * Math.sin(ph), z: Math.cos(ph) };
 
+        for (let j = 0; j < yCells; j++) {
+          const b = rowB[j];
+          const bx = fwd.x + up.x * b,
+            by = fwd.y + up.y * b,
+            bz = fwd.z + up.z * b; // row part
+          for (let i = 0; i < xCells; i++) {
+            const idx = j * xCells + i,
+              a = colA[i],
+              k = invLen[idx];
+            dirX[idx] = (bx + right.x * a) * k;
+            dirY[idx] = (by + right.y * a) * k;
+            dirZ[idx] = (bz + right.z * a) * k;
+          }
+        }
+
         img.data.fill(0);
 
         ts.fill(Infinity);
+        hitIdx.fill(-1);
+
+        for (const r of rects) {
+          const dx = (r[3] + r[4]) / 2 - player.x,
+            dy = (r[5] + r[6]) / 2 - player.y,
+            dz = (r[7] + r[8]) / 2 - player.z;
+          r[9] = dx * dx + dy * dy + dz * dz;
+        }
+        rects.sort((a, b) => a[9] - b[9]);
 
         for (let i = 0; i < xCells; i++) {
           for (let j = 0; j < yCells; j++) {
-            const [uX, uY, uZ] = cellDir(i, j);
+            const idx = j * xCells + i;
+            const uX = dirX[idx],
+              uY = dirY[idx],
+              uZ = dirZ[idx];
             if (uZ >= 0) continue;
             const ft = -player.z / uZ;
             if (ft >= viewDistance) continue;
             ts[j * xCells + i] = ft;
             const fade = (viewDistance - ft) / viewDistance;
-            setPixel(i, j, tileHue(Math.floor(player.x + uX * ft), Math.floor(player.y + uY * ft)), 40, 30 * (0.25 + 0.75 * fade));
+            const hue = tileHue(Math.floor(player.x + uX * ft), Math.floor(player.y + uY * ft));
+            const o = (hue * FADE_LEVELS + Math.min(FADE_LEVELS - 1, (fade * FADE_LEVELS) | 0)) * 3;
+            const p = idx * 4;
+            img.data[p] = floorRGB[o];
+            img.data[p + 1] = floorRGB[o + 1];
+            img.data[p + 2] = floorRGB[o + 2];
+            img.data[p + 3] = 255;
           }
         }
 
@@ -654,8 +812,8 @@
         const cv = new Float64Array(24); // corner offsets from the player
         const cd = new Float64Array(8); // corner depths along fwd
 
-        // inside loop(), replacing your whole `for (const rect of rects)` block:
-        for (const rect of rects) {
+        for (let r = 0; r < rects.length; r++) {
+          const rect = rects[r];
           let minA = Infinity,
             maxA = -Infinity,
             minB = Infinity,
@@ -718,38 +876,63 @@
           minJ = Math.max(0, minJ);
           maxJ = Math.min(yCells - 1, maxJ);
 
-          for (let i = minI; i <= maxI; i++) {
-            for (let j = minJ; j <= maxJ; j++) {
-              const [uX, uY, uZ] = cellDir(i, j);
-              const t = findIntersection(rect, uX, uY, uZ);
+          const ndx = Math.max(rect[4] - player.x, 0, player.x - rect[3]);
+          const ndy = Math.max(rect[6] - player.y, 0, player.y - rect[5]);
+          const ndz = Math.max(rect[8] - player.z, 0, player.z - rect[7]);
+          const nearest = Math.hypot(ndx, ndy, ndz);
+
+          for (let j = minJ; j <= maxJ; j++) {
+            for (let i = minI; i <= maxI; i++) {
               const idx = j * xCells + i;
+              if (ts[idx] <= nearest) continue; // something closer already owns this cell
+              const t = findIntersection(rect, dirX[idx], dirY[idx], dirZ[idx]);
               if (t < ts[idx] && t < viewDistance) {
                 ts[idx] = t;
-                const fade = (viewDistance - t) / viewDistance;
-                let h = rect[2].h,
-                  s = rect[2].s,
-                  l = rect[2].l * (0.25 + 0.75 * fade);
-
-                if (rect === targetRect) {
-                  const px = player.x + uX * t,
-                    py = player.y + uY * t,
-                    pz = player.z + uZ * t;
-                  const eps = 0.015 + t * 0.004; // grows with distance so the line has a steady on-screen thickness
-                  let near = 0;
-                  if (Math.abs(px - rect[3]) < eps || Math.abs(px - rect[4]) < eps) near++;
-                  if (Math.abs(py - rect[5]) < eps || Math.abs(py - rect[6]) < eps) near++;
-                  if (Math.abs(pz - rect[7]) < eps || Math.abs(pz - rect[8]) < eps) near++;
-                  if (near >= 2) {
-                    s = 0;
-                    l = 95;
-                  } // dark outline; use l = 95 for white
-                }
-
-                setPixel(i, j, h, s, l);
+                hitIdx[idx] = r;
               }
             }
           }
         }
+        for (let idx = 0; idx < hitIdx.length; idx++) {
+          const r = hitIdx[idx];
+          if (r < 0) continue;
+          const rect = rects[r];
+          const t = ts[idx];
+          const fade = (viewDistance - t) / viewDistance;
+          let h = rect[2].h,
+            s = rect[2].s,
+            l = rect[2].l * (0.25 + 0.75 * fade);
+
+          const u = dirX[idx],
+            v = dirY[idx],
+            w = dirZ[idx];
+          const px = player.x + u * t,
+            py = player.y + v * t,
+            pz = player.z + w * t;
+          const eps = Math.min(0.03 + t * 0.002, 0.1);
+
+          let near = 0;
+          if (Math.abs(px - rect[3]) < eps || Math.abs(px - rect[4]) < eps) near++;
+          if (Math.abs(py - rect[5]) < eps || Math.abs(py - rect[6]) < eps) near++;
+          if (Math.abs(pz - rect[7]) < eps || Math.abs(pz - rect[8]) < eps) near++;
+
+          if (near >= 2) {
+            if (rect === targetRect) {
+              s = 0;
+              l = 95; // white outline on the block you're aiming at
+            } else {
+              l *= 0.15; // dark outline on every other block
+            }
+          }
+
+          const p = idx * 4;
+          const [rr, gg, bb] = hslToRgb(h, s, l);
+          img.data[p] = rr;
+          img.data[p + 1] = gg;
+          img.data[p + 2] = bb;
+          img.data[p + 3] = 255;
+        }
+
         bufCtx.putImageData(img, 0, 0);
         ctx.fillStyle = "black";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -757,12 +940,124 @@
         ctx.drawImage(buf, 0, 0, canvas.width, canvas.height);
         const frameMs = performance.now() - t0;
         avgMs = avgMs * 0.9 + frameMs * 0.1;
-        const stat = JSON.stringify(player) + " MS per Frame: " + Number(avgMs);
+        const stat = JSON.stringify(player) + " MS per Frame: " + Number(avgMs) + " " + health;
+
+        let hotbarDisplay = "";
+
+        for (let h = 0; h < hotbar.length; h++) {
+          const item = hotbar[h];
+          hotbarDisplay += h === hotbarSlot ? `<h2>[[[ ${item.name} | ${item.count} ]]] </h2>` : `<h3>${item.name} | ${item.count} <h3>`;
+        }
+
+        document.getElementById("hotbar").innerHTML = hotbarDisplay;
 
         if (document.getElementById("stats").textContent !== stat) document.getElementById("stats").textContent = stat;
-        setTimeout(() => {
-          requestAnimationFrame(loop);
-        }, 0);
+        const cx = canvas.width / 2,
+          cy = canvas.height / 2;
+        const arm = 12,
+          gap = 4,
+          thick = 2;
+
+        if (touchingFloor) {
+          if (wasInAirLastFrame) {
+            const fallDist = lastGroundZ - player.z;
+            if (fallDist > fallThreshold) {
+              Math.round((health -= damagePerBlock * fallDist));
+              lastRegen = performance.now();
+            }
+          }
+          lastGroundZ = player.z;
+          wasInAirLastFrame = false;
+        } else {
+          wasInAirLastFrame = true;
+        }
+
+        if (health <= 0) {
+          msg("You died!");
+          hotbar.length = 0;
+          player.x = 0;
+          player.y = 0;
+          player.z = 1.5;
+          player.yCenterAngle = 0;
+          player.xCenterAngle = 0;
+          player.velocity = 0;
+          lastGroundZ = 1.5;
+          wasInAirLastFrame = false;
+          health = 20;
+        }
+
+        if (health < 20 && performance.now() - lastRegen > regenWait) {
+          health += 1;
+          lastRegen = performance.now();
+        }
+
+        health = Math.round(health);
+
+        ctx.globalCompositeOperation = "difference";
+        ctx.fillStyle = "white";
+        ctx.fillRect(cx - arm, cy - thick / 2, arm - gap, thick); // left
+        ctx.fillRect(cx + gap, cy - thick / 2, arm - gap, thick); // right
+        ctx.fillRect(cx - thick / 2, cy - arm, thick, arm - gap); // top
+        ctx.fillRect(cx - thick / 2, cy + gap, thick, arm - gap); // bottom
+        if (hotbar.length > 0 && hotbarSlot < hotbar.length && hotbarSlot > 0) text(hotbar[hotbarSlot].name.toUpperCase(), canvas.width / 2, symbolHeightStart, 50);
+        ctx.globalCompositeOperation = "source-over";
+
+        let currentHeartX = symbolSpacing;
+        for (let h = 0; h < Math.floor(health / 2); h++) {
+          drawRect(currentHeartX, symbolHeightStart, symbolWidth, symbolWidth, "black");
+          drawRect(
+            currentHeartX + symbolOutlineThickness,
+            symbolHeightStart + symbolOutlineThickness,
+            symbolWidth - symbolOutlineThickness * 2,
+            symbolWidth - symbolOutlineThickness * 2,
+            "red",
+          );
+          currentHeartX += symbolWidth + symbolSpacing;
+        }
+        if (Math.floor(health / 2) !== health / 2) {
+          drawRect(currentHeartX, symbolHeightStart, symbolWidth / 2, symbolWidth, "black");
+          drawRect(
+            currentHeartX + symbolOutlineThickness,
+            symbolHeightStart + symbolOutlineThickness,
+            symbolWidth / 2 - symbolOutlineThickness * 2,
+            symbolWidth - symbolOutlineThickness * 2,
+            "red",
+          );
+        }
+
+        let currentItemX = canvas.width - symbolSpacing - symbolWidth;
+        for (let h = hotbar.length - 1; h >= 0; h--) {
+          const item = hotbar[h];
+          if (hotbarSlot === h) {
+            drawRect(currentItemX - symbolSpacing / 2, symbolHeightStart - symbolSpacing / 2, symbolWidth + symbolSpacing, symbolWidth + symbolSpacing, "black");
+            drawRect(
+              currentItemX + symbolOutlineThickness / 2,
+              symbolHeightStart + symbolOutlineThickness / 2,
+              symbolWidth - symbolOutlineThickness,
+              symbolWidth - symbolOutlineThickness,
+              colorMap[item.name] ?
+                `hsl(${colorMap[item.name].h}, ${colorMap[item.name].s}%, ${colorMap[item.name].l}%)`
+              : `hsl(${(performance.now() / 10) % 360}, 100%, 50%)`,
+            );
+          } else {
+            drawRect(currentItemX, symbolHeightStart, symbolWidth, symbolWidth, "black");
+            drawRect(
+              currentItemX + symbolOutlineThickness,
+              symbolHeightStart + symbolOutlineThickness,
+              symbolWidth - symbolOutlineThickness * 2,
+              symbolWidth - symbolOutlineThickness * 2,
+              colorMap[item.name] ?
+                `hsl(${colorMap[item.name].h}, ${colorMap[item.name].s}%, ${colorMap[item.name].l}%)`
+              : `hsl(${(performance.now() / 10) % 360}, 100%, 50%)`,
+            );
+          }
+
+          currentItemX -= symbolWidth + symbolSpacing;
+        }
+
+        lastTime = performance.now();
+
+        requestAnimationFrame(loop);
       }
 
       const keysDown = new Set();
@@ -773,6 +1068,10 @@
       const moveAngle = 1;
 
       window.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && paused) {
+          paused = false;
+          requestAnimationFrame(loop);
+        }
         if (!trackedKeys.has(event.code)) return;
 
         event.preventDefault(); // Stops arrows/space from scrolling the page
