@@ -11,14 +11,14 @@
     <p id="stats"></p>
     <button onclick="document.body.innerHTML = ''">Clear all</button>
     <script>
-      function findIntersection(rect, uX, uY, uZ) {
+      function findIntersection(rect, uX, uY, uZ, iX, iY, iZ) {
         const xFace = player.x < rect[4] ? rect[4] : rect[3]; // since rect[3] is min x and rect[4] is max x
         const yFace = player.y < rect[6] ? rect[6] : rect[5]; // repeat
         const zFace = player.z < rect[8] ? rect[8] : rect[7];
 
-        const xT = (xFace - player.x) / uX;
-        const yT = (yFace - player.y) / uY;
-        const zT = (zFace - player.z) / uZ;
+        const xT = (xFace - player.x) * iX;
+        const yT = (yFace - player.y) * iY;
+        const zT = (zFace - player.z) * iZ;
 
         const maxX = rect[3];
         const minX = rect[4];
@@ -99,8 +99,10 @@
       function updateVertical(dT) {
         touchingFloor = false;
 
-        player.velocity -= gravity;
-        player.z += player.velocity;
+        const REF_MS = 20;
+        const dt = Math.min(dT / REF_MS, 3);
+        player.z += player.velocity * dt - 0.5 * gravity * dt * dt;
+        player.velocity -= gravity * dt;
 
         // 1. the z = 0 ground plane (not a rect)
         if (player.z - feetOffset < 0) {
@@ -283,11 +285,45 @@
         return r;
       }
 
+      function areEqual(obj1, obj2) {
+        const keys1 = Object.keys(obj1);
+        const keys2 = Object.keys(obj2);
+
+        if (keys1.length !== keys2.length) return false;
+
+        return keys1.every((key) => obj1[key] === obj2[key]);
+      }
+
+      function spawnEnemies(count, stats = null) {
+        for (let i = 0; i < count; i++) {
+          const s = stats ? stats[i] : { damage: 2, speed: 0.005 };
+          const startX = Math.floor(Math.random() * enemyRadius * 2) - enemyRadius;
+          const startY = Math.floor(Math.random() * enemyRadius * 2) - enemyRadius;
+          makeEnemy({ x: startX, y: startY, z: 0 }, { x: startX + 1, y: startY + 1, z: 2 }, { h: 180, s: 100, l: 50 }, s);
+        }
+      }
+
+      function makeEnemy(pos1, pos2, color, stats) {
+        const obj = [pos1, pos2, color];
+        obj[3] = Math.max(obj[0].x, obj[1].x);
+        obj[4] = Math.min(obj[0].x, obj[1].x);
+        obj[5] = Math.max(obj[0].y, obj[1].y);
+        obj[6] = Math.min(obj[0].y, obj[1].y);
+        obj[7] = Math.max(obj[0].z, obj[1].z);
+        obj[8] = Math.min(obj[0].z, obj[1].z);
+        obj[10] = true; // Is enemy?
+        obj[11] = stats;
+        enemies.push(obj);
+        console.log("enemy");
+      }
+
       function msg(msg) {
         drawRect(0, 0, canvas.width, canvas.height, "rgba(0, 0, 0, 0.6)");
         text(msg, canvas.width / 2, canvas.height / 2, 200, "white");
         text("Enter to unpause", canvas.width / 2, (canvas.height * 2) / 3, 125, "white");
         paused = true;
+        pauseTime = 0;
+        pauseStart = performance.now();
       }
 
       function text(str, x, y, size = 32, color = "white", align = "center") {
@@ -377,6 +413,8 @@
       const canvas = document.getElementById("canvas");
       const ctx = canvas.getContext("2d");
 
+      let baseRGB = new Float32Array(0);
+
       let avgMs = 0;
 
       canvas.width = 2500;
@@ -384,8 +422,8 @@
 
       const xDegs = 100;
       const yDegs = 50;
-      const xScale = 0.1;
-      const yScale = 0.1;
+      const xScale = url.searchParams.get("xscale") || 0.1;
+      const yScale = url.searchParams.get("yscale") || 0.1;
       const xCells = xDegs / xScale;
       const yCells = yDegs / yScale;
 
@@ -422,11 +460,27 @@
         leaf: { h: 115, s: 55, l: 32 },
       };
 
+      const breakingTimes = {
+        wood: 3000,
+        leaf: 750,
+        wool: 2000,
+      };
+
+      const enemies = [];
+      const enemyRadius = 50;
+      const globalEnemySpeedModifier = 1;
+      spawnEnemies(5 + Math.floor(Math.random() * 15));
+
       let health = 20;
       let lastGroundZ = 1.5;
       let wasInAirLastFrame = false;
       const fallThreshold = 6;
       const damagePerBlock = 1;
+
+      let invincibilityMs = 100;
+      let lastDamage = performance.now();
+      let msPerFrameForDamageInvincibility = 0;
+      let trackMsPerFrame = false;
 
       const hotbar = [
         {
@@ -436,6 +490,8 @@
       ];
       const hotbarSize = 9;
       let hotbarSlot = 0;
+
+      let pauseTime = 0;
 
       const maxBoxZ = Math.max(...rects.flatMap((r) => [r[0].z, r[1].z]));
       const ts = new Float32Array(xCells * yCells);
@@ -451,16 +507,15 @@
         return overlap(a[0].x, a[1].x, b[0].x, b[1].x) && overlap(a[0].y, a[1].y, b[0].y, b[1].y) && overlap(a[0].z, a[1].z, b[0].z, b[1].z);
       }
 
-      function checkCollisions() {
+      function checkCollisions(me = playerBox(), arr = rects, returnObj = false) {
         const half = 0.25; // player half-width in x and y
-        const me = playerBox();
 
         // when you re-enable the body, replace rects.length with bodyStart
         // so the player doesn't collide with their own body
-        const solidCount = rects.length;
+        const solidCount = arr.length;
 
         for (let i = 0; i < solidCount; i++) {
-          if (areTouching(me, rects[i])) return true;
+          if (areTouching(me, arr[i])) return returnObj ? arr[i] : true;
         }
         return false;
       }
@@ -475,6 +530,7 @@
 
       let wantBreak = false;
       let wantPlace = false;
+      let avgDeltaTimeForBreaking = 10;
 
       window.addEventListener("mousedown", (e) => {
         if (document.pointerLockElement !== canvas) return; // the first click only grabs the mouse
@@ -590,6 +646,9 @@
       const dirX = new Float32Array(xCells * yCells);
       const dirY = new Float32Array(xCells * yCells);
       const dirZ = new Float32Array(xCells * yCells);
+      const invX = new Float32Array(xCells * yCells);
+      const invY = new Float32Array(xCells * yCells);
+      const invZ = new Float32Array(xCells * yCells);
 
       for (let i = 0; i < xCells; i++) colA[i] = (((i + 0.5) / xCells) * 2 - 1) * aMax;
       for (let j = 0; j < yCells; j++) rowB[j] = (1 - ((j + 0.5) / yCells) * 2) * bMax;
@@ -606,20 +665,102 @@
 
       let lastScroll = performance.now();
 
-      function handleInput() {
+      let gotInitialBlock = false;
+      let initialBlockForBreak = null;
+      let breakingStarted = performance.now();
+      const breakingTime = 3000;
+      let breakingModifier = 1;
+      let originalColor = null;
+
+      function updateEnemies(dT = 20) {
+        for (let i = 0; i < enemies.length; i++) {
+          const obj = enemies[i];
+          const oX = obj[0].x + 0.5;
+          const oY = obj[0].y + 0.5;
+          const oZ = obj[0].z + 1;
+          const dX = player.x - oX;
+          const dY = player.y - oY;
+          const dZ = player.z - oZ;
+
+          const d = Math.hypot(dX, dY);
+
+          const uX = dX / d;
+          const uY = dY / d;
+          const uZ = dZ / d;
+
+          const step = obj[11].speed * dT * globalEnemySpeedModifier;
+
+          const enemyBox = [
+            { x: obj[0].x, y: obj[0].y, z: obj[0].z },
+            { x: obj[1].x, y: obj[1].y, z: obj[1].z },
+          ];
+
+          console.log(enemyBox);
+
+          obj[0].x += uX * step;
+          obj[1].x += uX * step;
+          if (
+            checkCollisions(
+              [
+                { x: obj[0].x, y: obj[0].y, z: obj[0].z },
+                { x: obj[1].x, y: obj[1].y, z: obj[1].z },
+              ],
+              rects.concat([...enemies.slice(0, i), ...enemies.slice(i + 1)]),
+            )
+          ) {
+            obj[0].x -= uX * step;
+            obj[1].x -= uX * step;
+          }
+          obj[0].y += uY * step;
+          obj[1].y += uY * step;
+          if (
+            checkCollisions(
+              [
+                { x: obj[0].x, y: obj[0].y, z: obj[0].z },
+                { x: obj[1].x, y: obj[1].y, z: obj[1].z },
+              ],
+              rects.concat([...enemies.slice(0, i), ...enemies.slice(i + 1)]),
+            )
+          ) {
+            obj[0].y -= uY * step;
+            obj[1].y -= uY * step;
+          }
+
+          if (obj[11].canFly) {
+            obj[0].z += uZ * step;
+            obj[1].z += uZ * step;
+          } else {
+            obj[0].z = Math.max(0, obj[0].z - gravity);
+            obj[1].z = Math.max(2, obj[1].z - gravity);
+            if (checkCollisions()) {
+            }
+          }
+
+          obj[3] = Math.max(obj[0].x, obj[1].x);
+          obj[4] = Math.min(obj[0].x, obj[1].x);
+          obj[5] = Math.max(obj[0].y, obj[1].y);
+          obj[6] = Math.min(obj[0].y, obj[1].y);
+          obj[7] = Math.max(obj[0].z, obj[1].z);
+          obj[8] = Math.min(obj[0].z, obj[1].z);
+        }
+      }
+
+      function handleInput(dT) {
         const h = (player.xCenterAngle * Math.PI) / 180;
         const fx = Math.cos(h); // forward vector
         const fy = Math.sin(h);
         const pitchLimit = 90 - yDegs / 2;
+
+        const move = movePerMs * dT;
 
         if (wantPlace) {
           wantPlace = false;
           const selectedBlock = hotbar[hotbarSlot];
           if (selectedBlock) {
             if (selectedBlock.count > 1) {
-              hotbar[hotbarSlot].count -= 1;
               const block = placeBlock();
               if (block) {
+                hotbar[hotbarSlot].count -= 1;
                 if (colorMap[selectedBlock.name]) block[2] = colorMap[selectedBlock.name];
                 block[10] = selectedBlock.name;
                 rects.push(block);
@@ -637,30 +778,55 @@
         }
 
         if (wantBreak) {
-          wantBreak = false;
           if (targetRect) {
-            const typeOfBlock = targetRect[10] || "wool";
-            let addedBlock = false;
-            for (const block of hotbar) {
-              if (block.name === typeOfBlock) {
-                block.count += 1;
-                addedBlock = true;
+            if (!gotInitialBlock) {
+              initialBlockForBreak = targetRect;
+              originalColor = initialBlockForBreak[2];
+              gotInitialBlock = true;
+              breakingStarted = performance.now();
+              avgDeltaTimeForBreaking = dT;
+            }
+            const total = breakingTimes[initialBlockForBreak[10]] * breakingModifier;
+            const remaining = Math.max(0, total - (performance.now() - breakingStarted)) / total;
+            initialBlockForBreak[2] = { ...originalColor, l: originalColor.l * remaining };
+            if (performance.now() - breakingStarted > breakingTimes[targetRect[10]] * breakingModifier && targetRect === initialBlockForBreak) {
+              gotInitialBlock = false;
+
+              wantBreak = false;
+              if (targetRect) {
+                const typeOfBlock = targetRect[10] || "wool";
+                let addedBlock = false;
+                for (const block of hotbar) {
+                  if (block.name === typeOfBlock) {
+                    block.count += 1;
+                    addedBlock = true;
+                  }
+                }
+                if (!addedBlock && hotbar.length < hotbarSize) {
+                  hotbar.push({
+                    name: typeOfBlock,
+                    count: 1,
+                  });
+                  addedBlock = true;
+                }
+                if (addedBlock) {
+                  const idx = rects.indexOf(targetRect);
+                  if (idx !== -1) rects.splice(idx, 1);
+                  targetRect = null;
+                } else {
+                  msg("Not enough hotbar space!");
+                }
               }
             }
-            if (!addedBlock && hotbar.length < hotbarSize) {
-              hotbar.push({
-                name: typeOfBlock,
-                count: 1,
-              });
-              addedBlock = true;
+            if (targetRect !== initialBlockForBreak) {
+              initialBlockForBreak[2] = originalColor;
+              wantBreak = false;
+              gotInitialBlock = false;
             }
-            if (addedBlock) {
-              const idx = rects.indexOf(targetRect);
-              if (idx !== -1) rects.splice(idx, 1);
-              targetRect = null;
-            } else {
-              msg("Not enough hotbar space!");
-            }
+          } else if (initialBlockForBreak) {
+            initialBlockForBreak[2] = originalColor;
+            wantBreak = false;
+            gotInitialBlock = false;
           }
         }
 
@@ -746,9 +912,13 @@
         if (paused) return;
         const t0 = performance.now();
         const dT = t0 - lastTime;
-        handleInput();
+        lastTime = performance.now();
+        handleInput(dT);
         updateVertical(dT);
         placeBlock();
+        updateEnemies(dT);
+
+        const renderingArr = rects.concat(enemies);
 
         //updateBody();
 
@@ -771,6 +941,9 @@
             dirX[idx] = (bx + right.x * a) * k;
             dirY[idx] = (by + right.y * a) * k;
             dirZ[idx] = (bz + right.z * a) * k;
+            invX[idx] = 1 / dirX[idx];
+            invY[idx] = 1 / dirY[idx];
+            invZ[idx] = 1 / dirZ[idx];
           }
         }
 
@@ -779,13 +952,13 @@
         ts.fill(Infinity);
         hitIdx.fill(-1);
 
-        for (const r of rects) {
+        for (const r of renderingArr) {
           const dx = (r[3] + r[4]) / 2 - player.x,
             dy = (r[5] + r[6]) / 2 - player.y,
             dz = (r[7] + r[8]) / 2 - player.z;
           r[9] = dx * dx + dy * dy + dz * dz;
         }
-        rects.sort((a, b) => a[9] - b[9]);
+        renderingArr.sort((a, b) => a[9] - b[9]);
 
         for (let i = 0; i < xCells; i++) {
           for (let j = 0; j < yCells; j++) {
@@ -812,8 +985,8 @@
         const cv = new Float64Array(24); // corner offsets from the player
         const cd = new Float64Array(8); // corner depths along fwd
 
-        for (let r = 0; r < rects.length; r++) {
-          const rect = rects[r];
+        for (let r = 0; r < renderingArr.length; r++) {
+          const rect = renderingArr[r];
           let minA = Infinity,
             maxA = -Infinity,
             minB = Infinity,
@@ -885,7 +1058,7 @@
             for (let i = minI; i <= maxI; i++) {
               const idx = j * xCells + i;
               if (ts[idx] <= nearest) continue; // something closer already owns this cell
-              const t = findIntersection(rect, dirX[idx], dirY[idx], dirZ[idx]);
+              const t = findIntersection(rect, dirX[idx], dirY[idx], dirZ[idx], invX[idx], invY[idx], invZ[idx]);
               if (t < ts[idx] && t < viewDistance) {
                 ts[idx] = t;
                 hitIdx[idx] = r;
@@ -893,15 +1066,22 @@
             }
           }
         }
+
+        if (baseRGB.length < renderingArr.length * 3) baseRGB = new Float32Array(renderingArr.length * 3 + 300); // grows when needed
+        for (let r = 0; r < renderingArr.length; r++) {
+          const c = renderingArr[r][2];
+          const [rr, gg, bb] = hslToRgb(c.h, c.s, c.l);
+          baseRGB[r * 3] = rr;
+          baseRGB[r * 3 + 1] = gg;
+          baseRGB[r * 3 + 2] = bb;
+        }
+
         for (let idx = 0; idx < hitIdx.length; idx++) {
           const r = hitIdx[idx];
           if (r < 0) continue;
-          const rect = rects[r];
+          const rect = renderingArr[r];
           const t = ts[idx];
-          const fade = (viewDistance - t) / viewDistance;
-          let h = rect[2].h,
-            s = rect[2].s,
-            l = rect[2].l * (0.25 + 0.75 * fade);
+          let k = 0.25 + 0.75 * ((viewDistance - t) / viewDistance);
 
           const u = dirX[idx],
             v = dirY[idx],
@@ -911,22 +1091,21 @@
             pz = player.z + w * t;
           const eps = Math.min(0.03 + t * 0.002, 0.1);
 
-          let near = 0;
-          if (Math.abs(px - rect[3]) < eps || Math.abs(px - rect[4]) < eps) near++;
-          if (Math.abs(py - rect[5]) < eps || Math.abs(py - rect[6]) < eps) near++;
-          if (Math.abs(pz - rect[7]) < eps || Math.abs(pz - rect[8]) < eps) near++;
-
-          if (near >= 2) {
-            if (rect === targetRect) {
-              s = 0;
-              l = 95; // white outline on the block you're aiming at
-            } else {
-              l *= 0.15; // dark outline on every other block
-            }
+          let edges = 0;
+          if (Math.abs(px - rect[3]) < eps || Math.abs(px - rect[4]) < eps) edges++;
+          if (Math.abs(py - rect[5]) < eps || Math.abs(py - rect[6]) < eps) edges++;
+          if (Math.abs(pz - rect[7]) < eps || Math.abs(pz - rect[8]) < eps) edges++;
+          let rr, gg, bb;
+          if (edges >= 2 && rect === targetRect) {
+            rr = gg = bb = 242; // the white outline, l = 95 and s = 0
+          } else {
+            if (edges >= 2) k *= 0.15; // dark outline
+            rr = baseRGB[r * 3] * k;
+            gg = baseRGB[r * 3 + 1] * k;
+            bb = baseRGB[r * 3 + 2] * k;
           }
 
           const p = idx * 4;
-          const [rr, gg, bb] = hslToRgb(h, s, l);
           img.data[p] = rr;
           img.data[p + 1] = gg;
           img.data[p + 2] = bb;
@@ -940,16 +1119,7 @@
         ctx.drawImage(buf, 0, 0, canvas.width, canvas.height);
         const frameMs = performance.now() - t0;
         avgMs = avgMs * 0.9 + frameMs * 0.1;
-        const stat = JSON.stringify(player) + " MS per Frame: " + Number(avgMs) + " " + health;
-
-        let hotbarDisplay = "";
-
-        for (let h = 0; h < hotbar.length; h++) {
-          const item = hotbar[h];
-          hotbarDisplay += h === hotbarSlot ? `<h2>[[[ ${item.name} | ${item.count} ]]] </h2>` : `<h3>${item.name} | ${item.count} <h3>`;
-        }
-
-        document.getElementById("hotbar").innerHTML = hotbarDisplay;
+        const stat = JSON.stringify(player) + " MS per Frame: " + Number(avgMs) + " " + health + "   " + dT;
 
         if (document.getElementById("stats").textContent !== stat) document.getElementById("stats").textContent = stat;
         const cx = canvas.width / 2,
@@ -984,11 +1154,19 @@
           lastGroundZ = 1.5;
           wasInAirLastFrame = false;
           health = 20;
+          lastDamage = performance.now() += 5000 + pauseTime;
         }
 
         if (health < 20 && performance.now() - lastRegen > regenWait) {
           health += 1;
           lastRegen = performance.now();
+        }
+
+        const enemyCollision = checkCollisions(playerBox(), enemies, true);
+        if (enemyCollision && performance.now() - lastDamage > 100 * dT) {
+          health -= enemyCollision[11].damage;
+          lastDamage = performance.now();
+          trackMsPerFrame = true;
         }
 
         health = Math.round(health);
@@ -999,7 +1177,12 @@
         ctx.fillRect(cx + gap, cy - thick / 2, arm - gap, thick); // right
         ctx.fillRect(cx - thick / 2, cy - arm, thick, arm - gap); // top
         ctx.fillRect(cx - thick / 2, cy + gap, thick, arm - gap); // bottom
-        if (hotbar.length > 0 && hotbarSlot < hotbar.length && hotbarSlot > 0) text(hotbar[hotbarSlot].name.toUpperCase(), canvas.width / 2, symbolHeightStart, 50);
+        if (hotbar.length > 0 && hotbarSlot < hotbar.length && hotbarSlot >= 0) {
+          let name = hotbar[hotbarSlot].name;
+          if (!name) name = "WOOL";
+          text(name.toUpperCase(), canvas.width / 2, symbolHeightStart, 50);
+        }
+
         ctx.globalCompositeOperation = "source-over";
 
         let currentHeartX = symbolSpacing;
@@ -1051,11 +1234,10 @@
               : `hsl(${(performance.now() / 10) % 360}, 100%, 50%)`,
             );
           }
+          text(item.count, currentItemX + symbolWidth / 2, symbolHeightStart - symbolSpacing, 32, "white");
 
           currentItemX -= symbolWidth + symbolSpacing;
         }
-
-        lastTime = performance.now();
 
         requestAnimationFrame(loop);
       }
@@ -1063,13 +1245,14 @@
       const keysDown = new Set();
       const trackedKeys = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ShiftLeft", "ShiftRight", "Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
 
-      const move = 0.15;
+      const movePerMs = 0.01;
 
       const moveAngle = 1;
 
       window.addEventListener("keydown", (event) => {
         if (event.key === "Enter" && paused) {
           paused = false;
+          pauseTime = performance.now() - pauseStart;
           requestAnimationFrame(loop);
         }
         if (!trackedKeys.has(event.code)) return;
