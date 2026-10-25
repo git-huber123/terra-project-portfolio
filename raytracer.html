@@ -422,8 +422,11 @@
 
       const xDegs = 100;
       const yDegs = 50;
-      const xScale = url.searchParams.get("xscale") || 0.1;
-      const yScale = url.searchParams.get("yscale") || 0.1;
+
+      const urlParams = new URLSearchParams(window.location.search);
+
+      const xScale = urlParams.get("xscale") || 0.1;
+      const yScale = urlParams.get("yscale") || 0.1;
       const xCells = xDegs / xScale;
       const yCells = yDegs / yScale;
 
